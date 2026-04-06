@@ -1,0 +1,296 @@
+/* ============================================================================
+   TempMail AutoFill - Content Script Styles
+   ============================================================================ */
+
+/* Widget Base */
+.tempmail-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 340px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 10px 30px -5px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #1f2937;
+  z-index: 2147483647;
+  overflow: hidden;
+  animation: tempmail-slide-up 0.3s ease-out;
+}
+
+@keyframes tempmail-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header */
+.tempmail-widget-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+}
+
+.tempmail-widget-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+}
+
+.tempmail-widget-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tempmail-widget-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.tempmail-widget-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+/* Body */
+.tempmail-widget-body {
+  padding: 16px;
+}
+
+.tempmail-email-display,
+.tempmail-password-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 8px;
+}
+
+.tempmail-email-display:last-child,
+.tempmail-password-display:last-child {
+  margin-bottom: 0;
+}
+
+.tempmail-email-text,
+.tempmail-password-text {
+  flex: 1;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 12px;
+  color: #1e293b;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.tempmail-password-text {
+  font-size: 11px;
+}
+
+.tempmail-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Copy Button */
+.tempmail-copy-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.tempmail-copy-btn:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+/* Actions */
+.tempmail-widget-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.tempmail-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+  text-align: center;
+}
+
+.tempmail-btn-fill {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+}
+
+.tempmail-btn-fill:hover {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.tempmail-btn-dismiss {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.tempmail-btn-dismiss:hover {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.tempmail-btn-copy-otp {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.tempmail-btn-copy-otp:hover {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+/* OTP Widget */
+.tempmail-otp-widget .tempmail-widget-header {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.tempmail-otp-code {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 32px;
+  font-weight: 700;
+  text-align: center;
+  padding: 16px;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border-radius: 12px;
+  color: #065f46;
+  letter-spacing: 8px;
+  margin-bottom: 12px;
+  border: 2px solid #a7f3d0;
+}
+
+.tempmail-otp-from,
+.tempmail-otp-subject {
+  font-size: 12px;
+  color: #64748b;
+  padding: 0 4px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tempmail-otp-subject {
+  color: #475569;
+  font-weight: 500;
+}
+
+/* Responsive */
+@media (max-width: 400px) {
+  .tempmail-widget {
+    width: calc(100vw - 32px);
+    right: 16px;
+    bottom: 16px;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .tempmail-widget {
+    background: #1e293b;
+    color: #f1f5f9;
+    box-shadow:
+      0 4px 6px -1px rgba(0, 0, 0, 0.3),
+      0 10px 30px -5px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+
+  .tempmail-email-display,
+  .tempmail-password-display {
+    background: #0f172a;
+    border-color: #334155;
+  }
+
+  .tempmail-email-text,
+  .tempmail-password-text {
+    color: #e2e8f0;
+  }
+
+  .tempmail-label {
+    color: #94a3b8;
+  }
+
+  .tempmail-copy-btn {
+    color: #94a3b8;
+  }
+
+  .tempmail-copy-btn:hover {
+    background: #334155;
+    color: #e2e8f0;
+  }
+
+  .tempmail-btn-dismiss,
+  .tempmail-btn-copy-otp {
+    background: #334155;
+    color: #94a3b8;
+  }
+
+  .tempmail-btn-dismiss:hover,
+  .tempmail-btn-copy-otp:hover {
+    background: #475569;
+    color: #e2e8f0;
+  }
+
+  .tempmail-otp-code {
+    background: linear-gradient(135deg, #064e3b, #065f46);
+    color: #a7f3d0;
+    border-color: #059669;
+  }
+
+  .tempmail-otp-from,
+  .tempmail-otp-subject {
+    color: #94a3b8;
+  }
+
+  .tempmail-otp-subject {
+    color: #cbd5e1;
+  }
+}

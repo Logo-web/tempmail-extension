@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TempMail AutoFill - Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="options-container">
+    <header class="options-header">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <path d="M22 4L12 13L2 4"/>
+        </svg>
+      </div>
+      <h1>TempMail AutoFill Settings</h1>
+    </header>
+
+    <main class="options-main">
+      <!-- General Settings -->
+      <section class="settings-section">
+        <h2>General</h2>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="auto-fill-enabled">Auto-detect registration forms</label>
+            <p class="setting-desc">Automatically detect signup forms and suggest a temporary email</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="auto-fill-enabled" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="auto-generate-password">Auto-generate password</label>
+            <p class="setting-desc">Generate a secure random password for each new temporary email</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="auto-generate-password" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="password-length">Password length</label>
+            <p class="setting-desc">Length of the generated password</p>
+          </div>
+          <div class="setting-control">
+            <input type="number" id="password-length" min="8" max="32" value="16">
+          </div>
+        </div>
+      </section>
+
+      <!-- Inbox Settings -->
+      <section class="settings-section">
+        <h2>Inbox</h2>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="auto-check-inbox">Auto-check inbox</label>
+            <p class="setting-desc">Automatically poll for new messages in the background</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="auto-check-inbox" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="poll-interval">Poll interval</label>
+            <p class="setting-desc">How often to check for new messages (in seconds)</p>
+          </div>
+          <div class="setting-control">
+            <input type="number" id="poll-interval" min="3" max="60" value="5">
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="show-notification">Desktop notifications</label>
+            <p class="setting-desc">Show a notification when a new message arrives</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="show-notification" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- OTP Settings -->
+      <section class="settings-section">
+        <h2>Verification Codes (OTP)</h2>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="otp-auto-fill">Auto-fill OTP codes</label>
+            <p class="setting-desc">Automatically detect and fill verification codes from emails</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="otp-auto-fill" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="otp-auto-submit">Auto-submit after OTP fill</label>
+            <p class="setting-desc">Automatically submit the form after filling the OTP code</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="otp-auto-submit">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Save Button -->
+      <div class="settings-actions">
+        <button id="save-settings" class="save-btn">Save Settings</button>
+        <span id="save-status" class="save-status"></span>
+      </div>
+    </main>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
