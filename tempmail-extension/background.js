@@ -69,29 +69,66 @@ async function getPayload(url, email = null, mid = null) {
   const params = new URLSearchParams({ url });
   if (email) params.set("email", email);
   if (mid) params.set("mid", mid);
-  
-  try {
-    const response = await fetch(`${PAYLOAD_URL}?${params.toString()}`);
-    if (!response.ok) return null;
-    return await response.text();
-  } catch (e) {
-    console.error("[TempMail] Payload error:", e);
-    return null;
+
+  // Retry up to 3 times with backoff
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(`${PAYLOAD_URL}?${params.toString()}`, {
+        method: "GET",
+        credentials: "omit",
+        mode: "cors",
+      });
+      if (!response.ok) {
+        console.warn(`[TempMail] Payload attempt ${attempt} failed: ${response.status}`);
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+        return null;
+      }
+      return await response.text();
+    } catch (e) {
+      console.error(`[TempMail] Payload attempt ${attempt} error:`, e.message);
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      return null;
+    }
   }
+  return null;
 }
 
 async function apiRequest(endpoint, params = {}) {
   const url = new URL(`${BASE_API_URL}${endpoint}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  
-  try {
-    const response = await fetch(url.toString());
-    if (!response.ok) return null;
-    return await response.json();
-  } catch (e) {
-    console.error("[TempMail] API error:", e);
-    return null;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        credentials: "omit",
+        mode: "cors",
+      });
+      if (!response.ok) {
+        console.warn(`[TempMail] API attempt ${attempt} failed: ${response.status}`);
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+        return null;
+      }
+      return await response.json();
+    } catch (e) {
+      console.error(`[TempMail] API attempt ${attempt} error:`, e.message);
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+      return null;
+    }
   }
+  return null;
 }
 
 async function createEmail(customName = null) {
