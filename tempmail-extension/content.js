@@ -7,6 +7,9 @@
 
   let emailData = null;
   let otpDetected = null;
+  let verificationLinks = null;
+  let verificationLinksFrom = "";
+  let verificationLinksSubject = "";
   let settings = {};
   let hasShownPrompt = false;
   let observedForms = new Set();
@@ -75,6 +78,24 @@
     "subscribe",
   ];
 
+  const PAGE_INDICATORS = [
+    "sign up",
+    "signup",
+    "sign-up",
+    "register",
+    "registration",
+    "create account",
+    "get started",
+    "join now",
+    "start free",
+    "try free",
+    "begin",
+    "welcome",
+    "magic link",
+    "continue with email",
+    "enter your email",
+  ];
+
   function isRegistrationForm(form) {
     const text = (
       form.innerHTML +
@@ -84,6 +105,17 @@
     ).toLowerCase();
 
     return FORM_INDICATORS.some((pattern) =>
+      new RegExp(pattern, "i").test(text)
+    );
+  }
+
+  function isRegistrationPage() {
+    const text = (
+      document.title +
+      document.body.textContent
+    ).toLowerCase();
+
+    return PAGE_INDICATORS.some((pattern) =>
       new RegExp(pattern, "i").test(text)
     );
   }
@@ -121,9 +153,133 @@
     return null;
   }
 
+  function findStandaloneEmailFields() {
+    const fields = [];
+    for (const selector of EMAIL_FIELD_SELECTORS) {
+      document.querySelectorAll(selector).forEach((field) => {
+        if (
+          field.type !== "hidden" &&
+          field.offsetParent !== null &&
+          !field.disabled &&
+          !field.readOnly &&
+          !field.value &&
+          !fields.includes(field)
+        ) {
+          // Check if field is near registration-related text
+          const parent = field.closest("div, section, main, article, form") || field.parentElement;
+          if (parent) {
+            const contextText = parent.textContent.toLowerCase();
+            const isNearSignup = PAGE_INDICATORS.some((p) =>
+              new RegExp(p, "i").test(contextText)
+            );
+            if (isNearSignup) {
+              fields.push(field);
+            }
+          }
+        }
+      });
+    }
+    return fields;
+  }
+
+  function extractVerificationLinks(text) {
+    if (!text) return [];
+    const urls = text.match(/https?:\/\/[^\s"'>]+/g) || [];
+    return urls.filter((url) => {
+      const lower = url.toLowerCase();
+      return (
+        lower.includes("verify") ||
+        lower.includes("confirm") ||
+        lower.includes("token") ||
+        lower.includes("auth") ||
+        lower.includes("callback") ||
+        lower.includes("magic") ||
+        lower.includes("login") ||
+        lower.includes("activate") ||
+        lower.includes("signup") ||
+        lower.includes("register") ||
+        lower.includes("set-password") ||
+        lower.includes("reset-password")
+      );
+    });
+  }
+
   // ============================================================================
   // UI Components
   // ============================================================================
+
+  function createInlineEmailWidget(email, emailField) {
+    // Remove existing inline widgets for this field
+    const existingId = `tempmail-inline-${emailField.dataset.tempmailId || ""}`;
+    const existing = document.getElementById(existingId);
+    if (existing) existing.remove();
+
+    const wrapper = document.createElement("div");
+    wrapper.id = existingId || `tempmail-inline-${Date.now()}`;
+    wrapper.className = "tempmail-inline-widget";
+    wrapper.innerHTML = `
+      <div class="tempmail-inline-content">
+        <span class="tempmail-inline-email">${email}</span>
+        <div class="tempmail-inline-actions">
+          <button class="tempmail-inline-btn tempmail-inline-fill" title="Fill email">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+            Fill
+          </button>
+          <button class="tempmail-inline-btn tempmail-inline-copy" title="Copy email">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+          </button>
+          <button class="tempmail-inline-btn tempmail-inline-dismiss" title="Dismiss">&times;</button>
+        </div>
+      </div>
+    `;
+
+    // Insert after the email field
+    emailField.parentNode.insertBefore(wrapper, emailField.nextSibling);
+
+    // Fill button
+    wrapper.querySelector(".tempmail-inline-fill").addEventListener("click", () => {
+      emailField.value = email;
+      emailField.dispatchEvent(new Event("input", { bubbles: true }));
+      emailField.dispatchEvent(new Event("change", { bubbles: true }));
+      
+      // Also try to find and fill a nearby submit button
+      const form = emailField.closest("form");
+      if (form) {
+        const submitBtn = form.querySelector('button[type="submit"], input[type="submit"], [data-testid*="submit"]');
+        if (submitBtn && submitBtn.offsetParent !== null) {
+          // Highlight the submit button to indicate user should click it
+          submitBtn.style.outline = "2px solid #6366f1";
+          submitBtn.style.outlineOffset = "2px";
+          setTimeout(() => {
+            submitBtn.style.outline = "";
+            submitBtn.style.outlineOffset = "";
+          }, 2000);
+        }
+      }
+      wrapper.remove();
+    });
+
+    // Copy button
+    wrapper.querySelector(".tempmail-inline-copy").addEventListener("click", () => {
+      navigator.clipboard.writeText(email).then(() => {
+        const btn = wrapper.querySelector(".tempmail-inline-copy");
+        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`;
+        setTimeout(() => wrapper.remove(), 800);
+      });
+    });
+
+    // Dismiss button
+    wrapper.querySelector(".tempmail-inline-dismiss").addEventListener("click", () => {
+      wrapper.remove();
+    });
+
+    return wrapper;
+  }
 
   function createPromptWidget(email, password, emailField, passwordField) {
     // Remove existing widget
@@ -282,11 +438,78 @@
     return widget;
   }
 
+  function createVerificationLinkWidget(links, from, subject) {
+    const existing = document.getElementById("tempmail-verify-widget");
+    if (existing) existing.remove();
+
+    const widget = document.createElement("div");
+    widget.id = "tempmail-verify-widget";
+    widget.className = "tempmail-widget tempmail-verify-widget";
+
+    const linkButtons = links.slice(0, 2).map((link, i) => {
+      const label = i === 0 ? "Open verification link" : "Open link";
+      return `<button class="tempmail-btn tempmail-btn-fill tempmail-verify-link-btn" data-url="${link}">${label}</button>`;
+    }).join("");
+
+    widget.innerHTML = `
+      <div class="tempmail-widget-header tempmail-verify-header">
+        <div class="tempmail-widget-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </div>
+        <span class="tempmail-widget-title">Verification email received!</span>
+        <button class="tempmail-widget-close" title="Close">&times;</button>
+      </div>
+      <div class="tempmail-widget-body">
+        <div class="tempmail-verify-from">From: ${from || "Unknown"}</div>
+        ${subject ? `<div class="tempmail-verify-subject">${subject}</div>` : ""}
+        <div class="tempmail-verify-links">
+          ${linkButtons}
+        </div>
+      </div>
+      <div class="tempmail-widget-actions">
+        <button class="tempmail-btn tempmail-btn-copy-link">Copy link</button>
+      </div>
+    `;
+
+    document.body.appendChild(widget);
+
+    widget.querySelector(".tempmail-widget-close").addEventListener("click", () => {
+      widget.remove();
+    });
+
+    // Open link buttons
+    widget.querySelectorAll(".tempmail-verify-link-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const url = btn.getAttribute("data-url");
+        window.open(url, "_blank");
+        widget.remove();
+      });
+    });
+
+    // Copy link button
+    widget.querySelector(".tempmail-btn-copy-link").addEventListener("click", () => {
+      navigator.clipboard.writeText(links[0]).then(() => {
+        const btn = widget.querySelector(".tempmail-btn-copy-link");
+        btn.textContent = "Copied!";
+        setTimeout(() => {
+          btn.textContent = "Copy link";
+        }, 1500);
+      });
+    });
+
+    return widget;
+  }
+
   // ============================================================================
   // Form Observer
   // ============================================================================
 
   function scanForForms() {
+    // 1. Check for registration forms (classic)
     const forms = document.querySelectorAll("form");
     forms.forEach((form) => {
       if (observedForms.has(form)) return;
@@ -297,7 +520,6 @@
         const passwordField = findPasswordField(form);
 
         if (emailField && emailData) {
-          // Check if email field is empty
           if (!emailField.value) {
             showRegistrationPrompt(emailField, passwordField);
           }
@@ -305,12 +527,32 @@
       }
     });
 
-    // Also check for OTP fields
+    // 2. Check for standalone email fields on registration pages (SPA-style)
+    if (!hasShownPrompt && emailData && isRegistrationPage()) {
+      const standaloneFields = findStandaloneEmailFields();
+      if (standaloneFields.length > 0) {
+        hasShownPrompt = true;
+        standaloneFields.forEach((field) => {
+          createInlineEmailWidget(emailData.email, field);
+        });
+      }
+    }
+
+    // 3. Check for OTP fields
     if (otpDetected && settings.otpAutoFill) {
       const otpField = findOTPField();
       if (otpField && !otpField.value) {
         showOTPWidget(otpDetected.code, otpDetected.from, otpDetected.subject);
       }
+    }
+
+    // 4. Check for verification links
+    if (verificationLinks && verificationLinks.length > 0) {
+      showVerificationWidget(
+        verificationLinks,
+        verificationLinksFrom,
+        verificationLinksSubject
+      );
     }
   }
 
@@ -328,6 +570,10 @@
 
   function showOTPWidget(code, from, subject) {
     createOTPWidget(code, from, subject);
+  }
+
+  function showVerificationWidget(links, from, subject) {
+    createVerificationLinkWidget(links, from, subject);
   }
 
   // ============================================================================
@@ -377,6 +623,13 @@
             showOTPWidget(message.code, message.from, message.subject);
           }
         }
+        break;
+
+      case "verificationLinkDetected":
+        verificationLinks = message.links;
+        verificationLinksFrom = message.from;
+        verificationLinksSubject = message.subject;
+        showVerificationWidget(message.links, message.from, message.subject);
         break;
 
       case "settings":

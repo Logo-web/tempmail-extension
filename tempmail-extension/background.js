@@ -137,6 +137,7 @@ async function checkInbox() {
     // Check for OTP codes in new messages
     if (newMessages.length > 0) {
       checkForOTP(newMessages);
+      checkForVerificationLinks(newMessages);
     }
   }
   
@@ -169,6 +170,7 @@ async function readMessage(mid) {
   
   // Check for OTP
   checkForOTP([data]);
+  checkForVerificationLinks([data]);
   
   return data;
 }
@@ -227,6 +229,78 @@ async function checkForOTP(messages) {
       chrome.runtime.sendMessage({
         action: "otpDetected",
         code: otp,
+        from: msg.from || msg.from_email || "",
+        subject: msg.subject || "",
+      }).catch(() => {});
+    }
+  }
+}
+
+// ============================================================================
+// Verification Link Detection
+// ============================================================================
+
+function extractVerificationLinks(text) {
+  if (!text) return [];
+  
+  // Extract URLs from HTML href attributes
+  const hrefUrls = text.match(/href=["'](https?:\/\/[^"']+)["']/gi) || [];
+  const extracted = hrefUrls.map((match) => {
+    const urlMatch = match.match(/href=["'](https?:\/\/[^"']+)["']/i);
+    return urlMatch ? urlMatch[1] : null;
+  }).filter(Boolean);
+  
+  // Also extract plain URLs
+  const plainUrls = text.match(/https?:\/\/[^\s"'<>]+/g) || [];
+  
+  const allUrls = [...new Set([...extracted, ...plainUrls])];
+  
+  // Filter for verification/auth-related URLs
+  return allUrls.filter((url) => {
+    const lower = url.toLowerCase();
+    return (
+      lower.includes("verify") ||
+      lower.includes("confirm") ||
+      lower.includes("token") ||
+      lower.includes("auth") ||
+      lower.includes("callback") ||
+      lower.includes("magic") ||
+      lower.includes("login") ||
+      lower.includes("activate") ||
+      lower.includes("signup") ||
+      lower.includes("register") ||
+      lower.includes("set-password") ||
+      lower.includes("reset-password") ||
+      lower.includes("verification") ||
+      lower.includes("email-verify")
+    );
+  });
+}
+
+async function checkForVerificationLinks(messages) {
+  for (const msg of messages) {
+    const body = msg.body || msg.body_html || "";
+    const links = extractVerificationLinks(body);
+    
+    if (links.length > 0) {
+      console.log("[TempMail] Verification links detected:", links);
+      
+      // Show notification
+      const settings = await chrome.storage.local.get(["showNotification"]);
+      if (settings.showNotification) {
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "icons/icon128.png",
+          title: "TempMail AutoFill",
+          message: `Verification email received! Click to open the link.`,
+          priority: 2,
+        });
+      }
+      
+      // Send to content script
+      chrome.runtime.sendMessage({
+        action: "verificationLinkDetected",
+        links: links,
         from: msg.from || msg.from_email || "",
         subject: msg.subject || "",
       }).catch(() => {});
