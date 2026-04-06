@@ -16,9 +16,24 @@ let isPolling = false;
 // Initialization
 // ============================================================================
 
+async function restoreState() {
+  const saved = await chrome.storage.local.get([
+    "currentEmail",
+    "currentPassword",
+    "inboxMessages",
+  ]);
+  if (saved.currentEmail) {
+    currentEmail = saved.currentEmail;
+    currentPassword = saved.currentPassword || null;
+    inboxMessages = saved.inboxMessages || [];
+    console.log("[TempMail] Restored state:", currentEmail);
+    startInboxPolling();
+  }
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   console.log("[TempMail] Extension installed");
-  
+
   // Set default settings
   await chrome.storage.local.set({
     autoFillEnabled: true,
@@ -29,17 +44,22 @@ chrome.runtime.onInstalled.addListener(async () => {
     showNotification: true,
     otpAutoFill: true,
   });
-  
-  // Load saved email
-  const saved = await chrome.storage.local.get(["currentEmail", "currentPassword"]);
-  if (saved.currentEmail) {
-    currentEmail = saved.currentEmail;
-    currentPassword = saved.currentPassword || null;
-  }
-  
-  // Start inbox polling
-  startInboxPolling();
+
+  await restoreState();
 });
+
+// Restore state on every service worker wakeup
+chrome.runtime.onStartup.addListener(async () => {
+  console.log("[TempMail] Service worker started");
+  await restoreState();
+});
+
+// Also restore on message if state is empty
+async function ensureState() {
+  if (!currentEmail) {
+    await restoreState();
+  }
+}
 
 // ============================================================================
 // SmailPro API
@@ -381,22 +401,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // async
     
     case "getEmail":
-      sendResponse({
-        email: currentEmail,
-        password: currentPassword,
-        messages: inboxMessages,
+      ensureState().then(() => {
+        sendResponse({
+          email: currentEmail,
+          password: currentPassword,
+          messages: inboxMessages,
+        });
       });
-      break;
+      return true; // async
     
     case "checkInbox":
-      checkInbox().then((messages) => {
-        sendResponse(messages);
+      ensureState().then(() => {
+        checkInbox().then((messages) => {
+          sendResponse(messages);
+        });
       });
       return true; // async
     
     case "readMessage":
-      readMessage(message.mid).then((msg) => {
-        sendResponse(msg);
+      ensureState().then(() => {
+        readMessage(message.mid).then((msg) => {
+          sendResponse(msg);
+        });
       });
       return true; // async
     
@@ -425,18 +451,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     
     case "getOTP":
-      // Get latest OTP from messages
-      let latestOTP = null;
-      for (const msg of inboxMessages) {
-        const text = msg.body || msg.subject || "";
-        const otp = extractOTP(text);
-        if (otp) {
-          latestOTP = { code: otp, from: msg.from || msg.from_email || "", subject: msg.subject || "" };
-          break;
+      ensureState().then(() => {
+        let latestOTP = null;
+        for (const msg of inboxMessages) {
+          const text = msg.body || msg.subject || "";
+          const otp = extractOTP(text);
+          if (otp) {
+            latestOTP = { code: otp, from: msg.from || msg.from_email || "", subject: msg.subject || "" };
+            break;
+          }
         }
-      }
-      sendResponse(latestOTP);
-      break;
+        sendResponse(latestOTP);
+      });
+      return true; // async
   }
 });
 

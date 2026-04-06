@@ -35,6 +35,14 @@
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.5);
 }
 
+.tempmail-pw-badge {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.tempmail-pw-badge:hover {
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.5);
+}
+
 /* Widget Base */
 .tempmail-widget {
   position: fixed;

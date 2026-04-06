@@ -6,6 +6,7 @@
   "use strict";
 
   const DATALIST_ID = "tempmail-autocomplete-list";
+  const DATALIST_ID_PW = "tempmail-autocomplete-list-pw";
 
   let emailData = null;
   let otpDetected = null;
@@ -126,7 +127,7 @@
   // Datalist-based Autocomplete (native browser dropdown)
   // ============================================================================
 
-  function ensureDatalist() {
+  function ensureEmailDatalist() {
     let datalist = document.getElementById(DATALIST_ID);
     if (!datalist) {
       datalist = document.createElement("datalist");
@@ -137,33 +138,44 @@
     return datalist;
   }
 
-  function updateDatalist() {
+  function ensurePasswordDatalist() {
+    let datalist = document.getElementById(DATALIST_ID_PW);
+    if (!datalist) {
+      datalist = document.createElement("datalist");
+      datalist.id = DATALIST_ID_PW;
+      document.body.appendChild(datalist);
+      hasInjectedDatalist = true;
+    }
+    return datalist;
+  }
+
+  function updateDatalists() {
     if (!emailData || !emailData.email) return;
 
-    const datalist = ensureDatalist();
+    // Email datalist - only email
+    const emailDatalist = ensureEmailDatalist();
+    emailDatalist.innerHTML = "";
+    const emailOption = document.createElement("option");
+    emailOption.value = emailData.email;
+    emailDatalist.appendChild(emailOption);
 
-    // Clear existing options
-    datalist.innerHTML = "";
-
-    // Add temp email option
-    const option = document.createElement("option");
-    option.value = emailData.email;
-    option.textContent = `${emailData.email} (TempMail)`;
-    datalist.appendChild(option);
-
-    // Add password as a second option (some browsers show it)
+    // Password datalist - only password
+    const pwDatalist = ensurePasswordDatalist();
+    pwDatalist.innerHTML = "";
     if (emailData.password) {
       const pwOption = document.createElement("option");
       pwOption.value = emailData.password;
-      pwOption.textContent = "Generated Password";
-      datalist.appendChild(pwOption);
+      pwDatalist.appendChild(pwOption);
     }
 
-    // Attach datalist to all email fields
-    attachDatalistToEmailFields();
+    // Attach email datalist to email fields
+    attachEmailDatalist();
+
+    // Attach password datalist to password fields
+    attachPasswordDatalist();
   }
 
-  function attachDatalistToEmailFields() {
+  function attachEmailDatalist() {
     const datalist = document.getElementById(DATALIST_ID);
     if (!datalist) return;
 
@@ -173,10 +185,27 @@
         field.setAttribute("list", DATALIST_ID);
         field.setAttribute("autocomplete", "email");
 
-        // Add a subtle visual indicator
         if (!field.dataset.tempmailAttached) {
           field.dataset.tempmailAttached = "true";
           addTempmailIndicator(field);
+        }
+      }
+    });
+  }
+
+  function attachPasswordDatalist() {
+    const datalist = document.getElementById(DATALIST_ID_PW);
+    if (!datalist) return;
+
+    const pwFields = findAllPasswordFields();
+    pwFields.forEach((field) => {
+      if (field.getAttribute("list") !== DATALIST_ID_PW) {
+        field.setAttribute("list", DATALIST_ID_PW);
+        field.setAttribute("autocomplete", "new-password");
+
+        if (!field.dataset.tempmailPwAttached) {
+          field.dataset.tempmailPwAttached = "true";
+          addPasswordIndicator(field);
         }
       }
     });
@@ -200,19 +229,34 @@
     return fields;
   }
 
+  function findAllPasswordFields() {
+    const fields = [];
+    for (const selector of PASSWORD_FIELD_SELECTORS) {
+      document.querySelectorAll(selector).forEach((field) => {
+        if (
+          field.type !== "hidden" &&
+          field.offsetParent !== null &&
+          !field.disabled &&
+          !field.readOnly &&
+          !fields.includes(field)
+        ) {
+          fields.push(field);
+        }
+      });
+    }
+    return fields;
+  }
+
   function addTempmailIndicator(field) {
-    // Add a small icon/badge next to the field showing temp email is available
     const wrapper = document.createElement("div");
     wrapper.className = "tempmail-field-wrapper";
     wrapper.style.position = "relative";
     wrapper.style.display = "inline-block";
     wrapper.style.width = "100%";
 
-    // Wrap the field
     field.parentNode.insertBefore(wrapper, field);
     wrapper.appendChild(field);
 
-    // Add indicator badge
     const badge = document.createElement("div");
     badge.className = "tempmail-field-badge";
     badge.innerHTML = `
@@ -221,15 +265,48 @@
         <path d="M22 4L12 13L2 4"/>
       </svg>
     `;
-    badge.title = "TempMail AutoFill available – click the field to see suggestions";
+    badge.title = "Click to fill temp email";
     wrapper.appendChild(badge);
 
-    // Click on badge fills the field
     badge.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (emailData) {
         field.value = emailData.email;
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+        field.focus();
+        badge.style.display = "none";
+      }
+    });
+  }
+
+  function addPasswordIndicator(field) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "tempmail-field-wrapper";
+    wrapper.style.position = "relative";
+    wrapper.style.display = "inline-block";
+    wrapper.style.width = "100%";
+
+    field.parentNode.insertBefore(wrapper, field);
+    wrapper.appendChild(field);
+
+    const badge = document.createElement("div");
+    badge.className = "tempmail-field-badge tempmail-pw-badge";
+    badge.innerHTML = `
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path d="M7 11V7a5 5 0 0110 0v4"/>
+      </svg>
+    `;
+    badge.title = "Click to fill generated password";
+    wrapper.appendChild(badge);
+
+    badge.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (emailData && emailData.password) {
+        field.value = emailData.password;
         field.dispatchEvent(new Event("input", { bubbles: true }));
         field.dispatchEvent(new Event("change", { bubbles: true }));
         field.focus();
@@ -530,9 +607,9 @@
   // ============================================================================
 
   function scanForForms() {
-    // 1. Update datalist on all email fields
+    // 1. Update datalists on email and password fields
     if (emailData) {
-      updateDatalist();
+      updateDatalists();
     }
 
     // 2. Check for registration forms (classic)
@@ -614,13 +691,13 @@
     switch (message.action) {
       case "emailCreated":
         emailData = { email: message.email, password: message.password };
-        updateDatalist();
+        updateDatalists();
         scanForForms();
         break;
 
       case "emailData":
         emailData = message.data;
-        updateDatalist();
+        updateDatalists();
         scanForForms();
         break;
 
@@ -672,7 +749,7 @@
         email: saved.currentEmail,
         password: saved.currentPassword || "",
       };
-      updateDatalist();
+      updateDatalists();
     }
 
     scanForForms();

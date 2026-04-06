@@ -66,7 +66,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     emailDisplay.classList.remove("hidden");
 
     emailAddress.value = data.email;
-    emailPassword.value = data.password || "Not generated yet";
+    emailPassword.value = data.password || "Click 'New Email' to generate";
 
     // Update inbox
     const messages = data.messages || [];
