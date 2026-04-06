@@ -76,7 +76,7 @@ async function getPayload(url, email = null, mid = null) {
       const response = await fetch(`${PAYLOAD_URL}?${params.toString()}`, {
         method: "GET",
         credentials: "omit",
-        mode: "cors",
+        keepalive: true,
       });
       if (!response.ok) {
         console.warn(`[TempMail] Payload attempt ${attempt} failed: ${response.status}`);
@@ -108,7 +108,7 @@ async function apiRequest(endpoint, params = {}) {
       const response = await fetch(url.toString(), {
         method: "GET",
         credentials: "omit",
-        mode: "cors",
+        keepalive: true,
       });
       if (!response.ok) {
         console.warn(`[TempMail] API attempt ${attempt} failed: ${response.status}`);
