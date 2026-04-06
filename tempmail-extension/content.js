@@ -5,13 +5,15 @@
 (function () {
   "use strict";
 
+  const DATALIST_ID = "tempmail-autocomplete-list";
+
   let emailData = null;
   let otpDetected = null;
   let verificationLinks = null;
   let verificationLinksFrom = "";
   let verificationLinksSubject = "";
   let settings = {};
-  let hasShownPrompt = false;
+  let hasInjectedDatalist = false;
   let observedForms = new Set();
 
   // ============================================================================
@@ -120,6 +122,126 @@
     );
   }
 
+  // ============================================================================
+  // Datalist-based Autocomplete (native browser dropdown)
+  // ============================================================================
+
+  function ensureDatalist() {
+    let datalist = document.getElementById(DATALIST_ID);
+    if (!datalist) {
+      datalist = document.createElement("datalist");
+      datalist.id = DATALIST_ID;
+      document.body.appendChild(datalist);
+      hasInjectedDatalist = true;
+    }
+    return datalist;
+  }
+
+  function updateDatalist() {
+    if (!emailData || !emailData.email) return;
+
+    const datalist = ensureDatalist();
+
+    // Clear existing options
+    datalist.innerHTML = "";
+
+    // Add temp email option
+    const option = document.createElement("option");
+    option.value = emailData.email;
+    option.textContent = `${emailData.email} (TempMail)`;
+    datalist.appendChild(option);
+
+    // Add password as a second option (some browsers show it)
+    if (emailData.password) {
+      const pwOption = document.createElement("option");
+      pwOption.value = emailData.password;
+      pwOption.textContent = "Generated Password";
+      datalist.appendChild(pwOption);
+    }
+
+    // Attach datalist to all email fields
+    attachDatalistToEmailFields();
+  }
+
+  function attachDatalistToEmailFields() {
+    const datalist = document.getElementById(DATALIST_ID);
+    if (!datalist) return;
+
+    const emailFields = findAllEmailFields();
+    emailFields.forEach((field) => {
+      if (field.getAttribute("list") !== DATALIST_ID) {
+        field.setAttribute("list", DATALIST_ID);
+        field.setAttribute("autocomplete", "email");
+
+        // Add a subtle visual indicator
+        if (!field.dataset.tempmailAttached) {
+          field.dataset.tempmailAttached = "true";
+          addTempmailIndicator(field);
+        }
+      }
+    });
+  }
+
+  function findAllEmailFields() {
+    const fields = [];
+    for (const selector of EMAIL_FIELD_SELECTORS) {
+      document.querySelectorAll(selector).forEach((field) => {
+        if (
+          field.type !== "hidden" &&
+          field.offsetParent !== null &&
+          !field.disabled &&
+          !field.readOnly &&
+          !fields.includes(field)
+        ) {
+          fields.push(field);
+        }
+      });
+    }
+    return fields;
+  }
+
+  function addTempmailIndicator(field) {
+    // Add a small icon/badge next to the field showing temp email is available
+    const wrapper = document.createElement("div");
+    wrapper.className = "tempmail-field-wrapper";
+    wrapper.style.position = "relative";
+    wrapper.style.display = "inline-block";
+    wrapper.style.width = "100%";
+
+    // Wrap the field
+    field.parentNode.insertBefore(wrapper, field);
+    wrapper.appendChild(field);
+
+    // Add indicator badge
+    const badge = document.createElement("div");
+    badge.className = "tempmail-field-badge";
+    badge.innerHTML = `
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <rect x="2" y="4" width="20" height="16" rx="2"/>
+        <path d="M22 4L12 13L2 4"/>
+      </svg>
+    `;
+    badge.title = "TempMail AutoFill available – click the field to see suggestions";
+    wrapper.appendChild(badge);
+
+    // Click on badge fills the field
+    badge.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (emailData) {
+        field.value = emailData.email;
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        field.dispatchEvent(new Event("change", { bubbles: true }));
+        field.focus();
+        badge.style.display = "none";
+      }
+    });
+  }
+
+  // ============================================================================
+  // Find helpers
+  // ============================================================================
+
   function findEmailField(form) {
     for (const selector of EMAIL_FIELD_SELECTORS) {
       const field = form.querySelector(selector);
@@ -153,39 +275,16 @@
     return null;
   }
 
-  function findStandaloneEmailFields() {
-    const fields = [];
-    for (const selector of EMAIL_FIELD_SELECTORS) {
-      document.querySelectorAll(selector).forEach((field) => {
-        if (
-          field.type !== "hidden" &&
-          field.offsetParent !== null &&
-          !field.disabled &&
-          !field.readOnly &&
-          !field.value &&
-          !fields.includes(field)
-        ) {
-          // Check if field is near registration-related text
-          const parent = field.closest("div, section, main, article, form") || field.parentElement;
-          if (parent) {
-            const contextText = parent.textContent.toLowerCase();
-            const isNearSignup = PAGE_INDICATORS.some((p) =>
-              new RegExp(p, "i").test(contextText)
-            );
-            if (isNearSignup) {
-              fields.push(field);
-            }
-          }
-        }
-      });
-    }
-    return fields;
-  }
-
   function extractVerificationLinks(text) {
     if (!text) return [];
-    const urls = text.match(/https?:\/\/[^\s"'>]+/g) || [];
-    return urls.filter((url) => {
+    const hrefUrls = text.match(/href=["'](https?:\/\/[^"']+)["']/gi) || [];
+    const extracted = hrefUrls.map((match) => {
+      const urlMatch = match.match(/href=["'](https?:\/\/[^"']+)["']/i);
+      return urlMatch ? urlMatch[1] : null;
+    }).filter(Boolean);
+    const plainUrls = text.match(/https?:\/\/[^\s"'<>]+/g) || [];
+    const allUrls = [...new Set([...extracted, ...plainUrls])];
+    return allUrls.filter((url) => {
       const lower = url.toLowerCase();
       return (
         lower.includes("verify") ||
@@ -199,7 +298,9 @@
         lower.includes("signup") ||
         lower.includes("register") ||
         lower.includes("set-password") ||
-        lower.includes("reset-password")
+        lower.includes("reset-password") ||
+        lower.includes("verification") ||
+        lower.includes("email-verify")
       );
     });
   }
@@ -208,81 +309,7 @@
   // UI Components
   // ============================================================================
 
-  function createInlineEmailWidget(email, emailField) {
-    // Remove existing inline widgets for this field
-    const existingId = `tempmail-inline-${emailField.dataset.tempmailId || ""}`;
-    const existing = document.getElementById(existingId);
-    if (existing) existing.remove();
-
-    const wrapper = document.createElement("div");
-    wrapper.id = existingId || `tempmail-inline-${Date.now()}`;
-    wrapper.className = "tempmail-inline-widget";
-    wrapper.innerHTML = `
-      <div class="tempmail-inline-content">
-        <span class="tempmail-inline-email">${email}</span>
-        <div class="tempmail-inline-actions">
-          <button class="tempmail-inline-btn tempmail-inline-fill" title="Fill email">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-            Fill
-          </button>
-          <button class="tempmail-inline-btn tempmail-inline-copy" title="Copy email">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <rect x="9" y="9" width="13" height="13" rx="2"/>
-              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-            </svg>
-          </button>
-          <button class="tempmail-inline-btn tempmail-inline-dismiss" title="Dismiss">&times;</button>
-        </div>
-      </div>
-    `;
-
-    // Insert after the email field
-    emailField.parentNode.insertBefore(wrapper, emailField.nextSibling);
-
-    // Fill button
-    wrapper.querySelector(".tempmail-inline-fill").addEventListener("click", () => {
-      emailField.value = email;
-      emailField.dispatchEvent(new Event("input", { bubbles: true }));
-      emailField.dispatchEvent(new Event("change", { bubbles: true }));
-      
-      // Also try to find and fill a nearby submit button
-      const form = emailField.closest("form");
-      if (form) {
-        const submitBtn = form.querySelector('button[type="submit"], input[type="submit"], [data-testid*="submit"]');
-        if (submitBtn && submitBtn.offsetParent !== null) {
-          // Highlight the submit button to indicate user should click it
-          submitBtn.style.outline = "2px solid #6366f1";
-          submitBtn.style.outlineOffset = "2px";
-          setTimeout(() => {
-            submitBtn.style.outline = "";
-            submitBtn.style.outlineOffset = "";
-          }, 2000);
-        }
-      }
-      wrapper.remove();
-    });
-
-    // Copy button
-    wrapper.querySelector(".tempmail-inline-copy").addEventListener("click", () => {
-      navigator.clipboard.writeText(email).then(() => {
-        const btn = wrapper.querySelector(".tempmail-inline-copy");
-        btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>`;
-        setTimeout(() => wrapper.remove(), 800);
-      });
-    });
-
-    // Dismiss button
-    wrapper.querySelector(".tempmail-inline-dismiss").addEventListener("click", () => {
-      wrapper.remove();
-    });
-
-    return wrapper;
-  }
-
   function createPromptWidget(email, password, emailField, passwordField) {
-    // Remove existing widget
     const existing = document.getElementById("tempmail-widget");
     if (existing) existing.remove();
 
@@ -329,7 +356,6 @@
 
     document.body.appendChild(widget);
 
-    // Event listeners
     widget.querySelector(".tempmail-widget-close").addEventListener("click", () => {
       widget.remove();
     });
@@ -352,7 +378,6 @@
       widget.remove();
     });
 
-    // Copy buttons
     widget.querySelectorAll(".tempmail-copy-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const text = btn.getAttribute("data-copy");
@@ -410,8 +435,6 @@
         otpField.value = code;
         otpField.dispatchEvent(new Event("input", { bubbles: true }));
         otpField.dispatchEvent(new Event("change", { bubbles: true }));
-        
-        // Try to submit if there's a form
         const form = otpField.closest("form");
         if (form) {
           const submitBtn = form.querySelector(
@@ -481,7 +504,6 @@
       widget.remove();
     });
 
-    // Open link buttons
     widget.querySelectorAll(".tempmail-verify-link-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const url = btn.getAttribute("data-url");
@@ -490,7 +512,6 @@
       });
     });
 
-    // Copy link button
     widget.querySelector(".tempmail-btn-copy-link").addEventListener("click", () => {
       navigator.clipboard.writeText(links[0]).then(() => {
         const btn = widget.querySelector(".tempmail-btn-copy-link");
@@ -509,7 +530,12 @@
   // ============================================================================
 
   function scanForForms() {
-    // 1. Check for registration forms (classic)
+    // 1. Update datalist on all email fields
+    if (emailData) {
+      updateDatalist();
+    }
+
+    // 2. Check for registration forms (classic)
     const forms = document.querySelectorAll("form");
     forms.forEach((form) => {
       if (observedForms.has(form)) return;
@@ -519,24 +545,11 @@
         const emailField = findEmailField(form);
         const passwordField = findPasswordField(form);
 
-        if (emailField && emailData) {
-          if (!emailField.value) {
-            showRegistrationPrompt(emailField, passwordField);
-          }
+        if (emailField && emailData && !emailField.value) {
+          showRegistrationPrompt(emailField, passwordField);
         }
       }
     });
-
-    // 2. Check for standalone email fields on registration pages (SPA-style)
-    if (!hasShownPrompt && emailData && isRegistrationPage()) {
-      const standaloneFields = findStandaloneEmailFields();
-      if (standaloneFields.length > 0) {
-        hasShownPrompt = true;
-        standaloneFields.forEach((field) => {
-          createInlineEmailWidget(emailData.email, field);
-        });
-      }
-    }
 
     // 3. Check for OTP fields
     if (otpDetected && settings.otpAutoFill) {
@@ -557,8 +570,8 @@
   }
 
   function showRegistrationPrompt(emailField, passwordField) {
-    if (hasShownPrompt) return;
-    hasShownPrompt = true;
+    const existing = document.getElementById("tempmail-widget");
+    if (existing) return;
 
     createPromptWidget(
       emailData.email,
@@ -601,13 +614,13 @@
     switch (message.action) {
       case "emailCreated":
         emailData = { email: message.email, password: message.password };
-        hasShownPrompt = false;
+        updateDatalist();
         scanForForms();
         break;
 
       case "emailData":
         emailData = message.data;
-        hasShownPrompt = false;
+        updateDatalist();
         scanForForms();
         break;
 
@@ -643,7 +656,6 @@
   // ============================================================================
 
   async function init() {
-    // Load settings
     settings = await chrome.storage.local.get([
       "autoFillEnabled",
       "autoGeneratePassword",
@@ -651,7 +663,6 @@
       "showNotification",
     ]);
 
-    // Load email data
     const saved = await chrome.storage.local.get([
       "currentEmail",
       "currentPassword",
@@ -661,22 +672,19 @@
         email: saved.currentEmail,
         password: saved.currentPassword || "",
       };
+      updateDatalist();
     }
 
-    // Start scanning
     scanForForms();
 
-    // Observe DOM changes
     observer.observe(document.body, {
       childList: true,
       subtree: true,
     });
 
-    // Also scan periodically for SPAs
     setInterval(scanForForms, 2000);
   }
 
-  // Wait for DOM to be ready
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
