@@ -73,7 +73,12 @@ async function getPayload(url, email = null, mid = null) {
   const targetUrl = `${PAYLOAD_URL}?${params.toString()}`;
 
   try {
-    const response = await fetch(targetUrl);
+    const response = await fetch(targetUrl, {
+      method: "GET",
+      headers: {
+        "Accept": "*/*",
+      },
+    });
     if (!response.ok) {
       console.warn(`[TempMail] Payload failed: ${response.status}`);
       return null;
@@ -90,7 +95,12 @@ async function apiRequest(endpoint, params = {}) {
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
   try {
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+      },
+    });
     if (!response.ok) {
       console.warn(`[TempMail] API failed: ${response.status}`);
       return null;
