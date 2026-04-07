@@ -152,26 +152,32 @@
   function updateDatalists() {
     if (!emailData || !emailData.email) return;
 
-    // Email datalist - only email
-    const emailDatalist = ensureEmailDatalist();
-    emailDatalist.innerHTML = "";
+    // Remove old datalists entirely and recreate
+    const oldEmailDL = document.getElementById(DATALIST_ID);
+    if (oldEmailDL) oldEmailDL.remove();
+    const oldPwDL = document.getElementById(DATALIST_ID_PW);
+    if (oldPwDL) oldPwDL.remove();
+
+    // Email datalist
+    const emailDatalist = document.createElement("datalist");
+    emailDatalist.id = DATALIST_ID;
     const emailOption = document.createElement("option");
     emailOption.value = emailData.email;
     emailDatalist.appendChild(emailOption);
+    document.body.appendChild(emailDatalist);
 
-    // Password datalist - only password
-    const pwDatalist = ensurePasswordDatalist();
-    pwDatalist.innerHTML = "";
+    // Password datalist
+    const pwDatalist = document.createElement("datalist");
+    pwDatalist.id = DATALIST_ID_PW;
     if (emailData.password) {
       const pwOption = document.createElement("option");
       pwOption.value = emailData.password;
       pwDatalist.appendChild(pwOption);
     }
+    document.body.appendChild(pwDatalist);
 
-    // Attach email datalist to email fields
+    // Re-attach to all fields
     attachEmailDatalist();
-
-    // Attach password datalist to password fields
     attachPasswordDatalist();
   }
 
@@ -189,17 +195,8 @@
           field.dataset.tempmailAttached = "true";
           addTempmailIndicator(field);
 
-          // On focus, always refresh from storage (catches late email creation)
-          field.addEventListener("focus", async () => {
-            const saved = await chrome.storage.local.get(["currentEmail", "currentPassword"]);
-            if (saved.currentEmail && (!emailData || emailData.email !== saved.currentEmail)) {
-              emailData = {
-                email: saved.currentEmail,
-                password: saved.currentPassword || "",
-              };
-              updateDatalists();
-            }
-          });
+          // On focus, always refresh from storage
+          field.addEventListener("focus", refreshFromStorage);
         }
       }
     });
@@ -220,19 +217,25 @@
           addPasswordIndicator(field);
 
           // On focus, always refresh from storage
-          field.addEventListener("focus", async () => {
-            const saved = await chrome.storage.local.get(["currentEmail", "currentPassword"]);
-            if (saved.currentEmail && (!emailData || emailData.email !== saved.currentEmail)) {
-              emailData = {
-                email: saved.currentEmail,
-                password: saved.currentPassword || "",
-              };
-              updateDatalists();
-            }
-          });
+          field.addEventListener("focus", refreshFromStorage);
         }
       }
     });
+  }
+
+  async function refreshFromStorage() {
+    const saved = await chrome.storage.local.get(["currentEmail", "currentPassword"]);
+    if (saved.currentEmail) {
+      const newEmail = {
+        email: saved.currentEmail,
+        password: saved.currentPassword || "",
+      };
+      // Only update if different
+      if (!emailData || emailData.email !== newEmail.email) {
+        emailData = newEmail;
+        updateDatalists();
+      }
+    }
   }
 
   function findAllEmailFields() {

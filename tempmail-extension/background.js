@@ -118,33 +118,47 @@ async function apiRequest(endpoint, params = {}) {
 async function createEmail(customName = null) {
   const payload = await getPayload(`${BASE_API_URL}/create`, customName);
   if (!payload) return null;
-  
+
   const params = { payload };
   if (customName) params.email = customName;
-  
+
   const data = await apiRequest("/create", params);
   if (!data || !data.email) return null;
-  
+
   currentEmail = data.email;
   currentPassword = generatePassword();
   inboxMessages = [];
-  
+
   await chrome.storage.local.set({
     currentEmail: data.email,
     currentPassword: currentPassword,
     emailTimestamp: data.timestamp || Date.now(),
   });
-  
-  // Notify all tabs
+
+  // Notify ALL tabs directly via chrome.tabs.sendMessage
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    try {
+      chrome.tabs.sendMessage(tab.id, {
+        action: "emailCreated",
+        email: currentEmail,
+        password: currentPassword,
+      });
+    } catch (e) {
+      // Tab may not have content script loaded
+    }
+  }
+
+  // Also broadcast via runtime (for popup etc)
   chrome.runtime.sendMessage({
     action: "emailCreated",
     email: currentEmail,
     password: currentPassword,
   }).catch(() => {});
-  
+
   // Start polling
   startInboxPolling();
-  
+
   return { email: currentEmail, password: currentPassword };
 }
 
