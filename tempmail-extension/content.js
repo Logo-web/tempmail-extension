@@ -152,71 +152,70 @@
   function updateDatalists() {
     if (!emailData || !emailData.email) return;
 
-    // Remove old datalists entirely and recreate
-    const oldEmailDL = document.getElementById(DATALIST_ID);
-    if (oldEmailDL) oldEmailDL.remove();
-    const oldPwDL = document.getElementById(DATALIST_ID_PW);
-    if (oldPwDL) oldPwDL.remove();
-
-    // Email datalist
-    const emailDatalist = document.createElement("datalist");
-    emailDatalist.id = DATALIST_ID;
+    // Update existing datalist values (don't remove elements - keeps list attrs valid)
+    let emailDatalist = document.getElementById(DATALIST_ID);
+    if (!emailDatalist) {
+      emailDatalist = document.createElement("datalist");
+      emailDatalist.id = DATALIST_ID;
+      document.body.appendChild(emailDatalist);
+    }
+    emailDatalist.innerHTML = "";
     const emailOption = document.createElement("option");
     emailOption.value = emailData.email;
     emailDatalist.appendChild(emailOption);
-    document.body.appendChild(emailDatalist);
 
-    // Password datalist
-    const pwDatalist = document.createElement("datalist");
-    pwDatalist.id = DATALIST_ID_PW;
+    let pwDatalist = document.getElementById(DATALIST_ID_PW);
+    if (!pwDatalist) {
+      pwDatalist = document.createElement("datalist");
+      pwDatalist.id = DATALIST_ID_PW;
+      document.body.appendChild(pwDatalist);
+    }
+    pwDatalist.innerHTML = "";
     if (emailData.password) {
       const pwOption = document.createElement("option");
       pwOption.value = emailData.password;
       pwDatalist.appendChild(pwOption);
     }
-    document.body.appendChild(pwDatalist);
 
-    // Re-attach to all fields
-    attachEmailDatalist();
-    attachPasswordDatalist();
+    // Always attach to all fields (don't skip existing ones)
+    attachEmailDatalist(true);
+    attachPasswordDatalist(true);
   }
 
-  function attachEmailDatalist() {
+  function attachEmailDatalist(force = false) {
     const datalist = document.getElementById(DATALIST_ID);
     if (!datalist) return;
 
     const emailFields = findAllEmailFields();
     emailFields.forEach((field) => {
-      if (field.getAttribute("list") !== DATALIST_ID) {
+      const hasList = field.getAttribute("list") === DATALIST_ID;
+      if (force || !hasList) {
         field.setAttribute("list", DATALIST_ID);
         field.setAttribute("autocomplete", "email");
 
         if (!field.dataset.tempmailAttached) {
           field.dataset.tempmailAttached = "true";
           addTempmailIndicator(field);
-
-          // On focus, always refresh from storage
           field.addEventListener("focus", refreshFromStorage);
         }
       }
     });
   }
 
-  function attachPasswordDatalist() {
+  function attachPasswordDatalist(force = false) {
     const datalist = document.getElementById(DATALIST_ID_PW);
     if (!datalist) return;
 
     const pwFields = findAllPasswordFields();
     pwFields.forEach((field) => {
-      if (field.getAttribute("list") !== DATALIST_ID_PW) {
+      const hasList = field.getAttribute("list") === DATALIST_ID_PW;
+      if (force || !hasList) {
         field.setAttribute("list", DATALIST_ID_PW);
         field.setAttribute("autocomplete", "new-password");
 
         if (!field.dataset.tempmailPwAttached) {
           field.dataset.tempmailPwAttached = "true";
           addPasswordIndicator(field);
-
-          // On focus, always refresh from storage
           field.addEventListener("focus", refreshFromStorage);
         }
       }
@@ -717,12 +716,19 @@
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
 
+    console.log("[TempMail] Storage changed:", Object.keys(changes));
+
     if (changes.currentEmail || changes.currentPassword) {
+      const newEmail = changes.currentEmail?.newValue || emailData?.email || "";
+      const newPw = changes.currentPassword?.newValue || emailData?.password || "";
+      console.log("[TempMail] Email updated:", newEmail);
+
       emailData = {
-        email: changes.currentEmail?.newValue || emailData?.email || "",
-        password: changes.currentPassword?.newValue || emailData?.password || "",
+        email: newEmail,
+        password: newPw,
       };
       if (emailData.email) {
+        console.log("[TempMail] Updating datalists and scanning forms");
         updateDatalists();
         scanForForms();
       }
