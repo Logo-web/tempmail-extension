@@ -77,8 +77,14 @@ async function getPayload(url, email = null, mid = null) {
       method: "GET",
       headers: {
         "Accept": "*/*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
     });
+    if (response.status === 429) {
+      const data = await response.json().catch(() => ({}));
+      console.warn("[TempMail] Rate limited:", data.msg || "Too many requests");
+      return null;
+    }
     if (!response.ok) {
       console.warn(`[TempMail] Payload failed: ${response.status}`);
       return null;
@@ -99,6 +105,7 @@ async function apiRequest(endpoint, params = {}) {
       method: "GET",
       headers: {
         "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
     });
     if (!response.ok) {
