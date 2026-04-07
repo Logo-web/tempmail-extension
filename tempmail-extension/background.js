@@ -70,15 +70,12 @@ async function getPayload(url, email = null, mid = null) {
   if (mid) params.set("mid", mid);
 
   const targetUrl = `${PAYLOAD_URL}?${params.toString()}`;
+  console.log("[TempMail] Fetching payload:", targetUrl.substring(0, 100));
 
   try {
-    const response = await fetch(targetUrl, {
-      method: "GET",
-      headers: {
-        "Accept": "*/*",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    });
+    const response = await fetch(targetUrl);
+    console.log("[TempMail] Payload response status:", response.status);
+    
     if (response.status === 429) {
       const data = await response.json().catch(() => ({}));
       console.warn("[TempMail] Rate limited:", data.msg || "Too many requests");
@@ -91,6 +88,7 @@ async function getPayload(url, email = null, mid = null) {
     return await response.text();
   } catch (e) {
     console.error("[TempMail] Payload fetch error:", e.message);
+    console.error("[TempMail] Target URL:", targetUrl);
     return null;
   }
 }
@@ -99,14 +97,12 @@ async function apiRequest(endpoint, params = {}) {
   const url = new URL(`${BASE_API_URL}${endpoint}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
+  console.log("[TempMail] API request:", url.toString().substring(0, 150));
+
   try {
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    });
+    const response = await fetch(url.toString());
+    console.log("[TempMail] API response status:", response.status);
+    
     if (!response.ok) {
       console.warn(`[TempMail] API failed: ${response.status}`);
       return null;
@@ -114,6 +110,7 @@ async function apiRequest(endpoint, params = {}) {
     return await response.json();
   } catch (e) {
     console.error("[TempMail] API fetch error:", e.message);
+    console.error("[TempMail] Target URL:", url.toString());
     return null;
   }
 }
