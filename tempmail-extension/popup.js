@@ -157,9 +157,45 @@ document.addEventListener("DOMContentLoaded", async () => {
         <line x1="12" y1="5" x2="12" y2="19"/>
         <line x1="5" y1="12" x2="19" y2="12"/>
       </svg>
-      New Email
+      New Temp Email
     `;
   });
+
+  // Create Gmail
+  const createGmailBtn = document.getElementById("create-gmail");
+  if (createGmailBtn) {
+    createGmailBtn.addEventListener("click", async () => {
+      createGmailBtn.disabled = true;
+      createGmailBtn.textContent = "Creating Gmail...";
+
+      const result = await chrome.runtime.sendMessage({ action: "createGmail" });
+      if (result) {
+        currentEmailData = result;
+        updateUI(result);
+      }
+
+      createGmailBtn.disabled = false;
+      createGmailBtn.textContent = "Gmail";
+    });
+  }
+
+  // Create Outlook
+  const createOutlookBtn = document.getElementById("create-outlook");
+  if (createOutlookBtn) {
+    createOutlookBtn.addEventListener("click", async () => {
+      createOutlookBtn.disabled = true;
+      createOutlookBtn.textContent = "Creating Outlook...";
+
+      const result = await chrome.runtime.sendMessage({ action: "createOutlook" });
+      if (result) {
+        currentEmailData = result;
+        updateUI(result);
+      }
+
+      createOutlookBtn.disabled = false;
+      createOutlookBtn.textContent = "Outlook";
+    });
+  }
 
   // Refresh inbox
   refreshInboxBtn.addEventListener("click", async () => {

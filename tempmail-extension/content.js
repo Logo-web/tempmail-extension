@@ -899,6 +899,105 @@
   });
 
   // ============================================================================
+  // SmailPro Gmail/Outlook Auto-Creation
+  // ============================================================================
+
+  function setupSmailProAutoCreate() {
+    if (!window.location.hostname.includes("smailpro.com")) return;
+    if (!window.location.pathname.includes("temporary-email")) return;
+
+    console.log("[TempMail] SmailPro page detected, setting up auto-create");
+
+    // Check URL params for email type
+    const urlParams = new URLSearchParams(window.location.search);
+    const emailType = urlParams.get("emailType"); // gmail or outlook
+
+    if (!emailType) return;
+
+    console.log("[TempMail] Auto-creating", emailType, "email");
+
+    // Wait for Alpine.js to initialize, then click generate
+    const waitForAlpine = setInterval(() => {
+      // Look for the create function (Alpine component)
+      const createComponent = window.Alpine?.$data?.(document.querySelector("[x-data]"));
+
+      // Try to find and click the generate button
+      const generateBtn = document.querySelector('[x-on\\:click*="generate"], button:has-text("Generate")');
+      const createBtn = document.querySelector('button:has-text("Create"), [x-on\\:click*="create"]');
+
+      // Try clicking various buttons
+      const allButtons = document.querySelectorAll("button");
+      for (const btn of allButtons) {
+        const text = btn.textContent.trim().toLowerCase();
+        if (text === "generate" || text === "create" || text.includes("generate")) {
+          console.log("[TempMail] Found generate button:", text);
+          btn.click();
+          clearInterval(waitForAlpine);
+          break;
+        }
+      }
+
+      // If no button found, try calling the Alpine function directly
+      if (!generateBtn && !createBtn) {
+        // Look for the generate function in Alpine store
+        const alpineEls = document.querySelectorAll("[x-data]");
+        for (const el of alpineEls) {
+          const data = el.__x?.__data;
+          if (data && typeof data.generate === "function") {
+            console.log("[TempMail] Calling generate function");
+            data.generate(true);
+            clearInterval(waitForAlpine);
+            break;
+          }
+        }
+      }
+    }, 500);
+
+    // Timeout after 15 seconds
+    setTimeout(() => clearInterval(waitForAlpine), 15000);
+
+    // Watch for the created email
+    const checkForEmail = setInterval(() => {
+      // Look for the email display
+      const emailDisplay = document.querySelector(".email-display, [x-text*='email'], .created-email");
+      if (emailDisplay) {
+        const emailText = emailDisplay.textContent.trim();
+        const emailMatch = emailText.match(/[\w.+-]+@(gmail\.com|googlemail\.com|outlook\.com|hotmail\.com|outlook\.\w+)/i);
+        if (emailMatch) {
+          const email = emailMatch[0];
+          console.log("[TempMail] Email created:", email);
+          clearInterval(checkForEmail);
+
+          const action = emailType === "gmail" ? "gmailCreated" : "outlookCreated";
+          chrome.runtime.sendMessage({
+            action: action,
+            email: email,
+          });
+        }
+      }
+
+      // Also check for the email in the input field or display
+      const emailInputs = document.querySelectorAll('input[type="text"], input[type="email"]');
+      for (const input of emailInputs) {
+        if (input.value && (input.value.includes("@gmail.com") || input.value.includes("@outlook.com"))) {
+          console.log("[TempMail] Email found in input:", input.value);
+          clearInterval(checkForEmail);
+
+          const action = emailType === "gmail" ? "gmailCreated" : "outlookCreated";
+          chrome.runtime.sendMessage({
+            action: action,
+            email: input.value,
+          });
+          break;
+        }
+      }
+    }, 1000);
+
+    // Timeout after 30 seconds
+    setTimeout(() => clearInterval(checkForEmail), 30000);
+  }
+
+  // ============================================================================
   // Initialization
   // ============================================================================
 
@@ -921,6 +1020,9 @@
       };
       updateDatalists();
     }
+
+    // Setup smailpro auto-create if on that page
+    setupSmailProAutoCreate();
 
     scanForForms();
 

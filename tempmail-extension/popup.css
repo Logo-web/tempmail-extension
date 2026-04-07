@@ -230,6 +230,33 @@ body {
   transform: none !important;
 }
 
+.create-options {
+  display: flex;
+  gap: 6px;
+}
+
+.gmail-btn {
+  background: linear-gradient(135deg, #ea4335, #fbbc05);
+  color: #ffffff;
+}
+
+.gmail-btn:hover {
+  background: linear-gradient(135deg, #d93025, #f9ab00);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(234, 67, 53, 0.4);
+}
+
+.outlook-btn {
+  background: linear-gradient(135deg, #0078d4, #005a9e);
+  color: #ffffff;
+}
+
+.outlook-btn:hover {
+  background: linear-gradient(135deg, #006cbd, #004578);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 120, 212, 0.4);
+}
+
 /* Inbox */
 .inbox-section {
   flex: 1;

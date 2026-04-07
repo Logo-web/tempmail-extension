@@ -181,6 +181,140 @@ async function createEmail(customName = null) {
   }
 }
 
+// ============================================================================
+// Gmail/Outlook Creation via smailpro.com page
+// ============================================================================
+
+async function createGmailEmail() {
+  console.log("[TempMail] Creating Gmail via smailpro.com...");
+  
+  // Open smailpro in a new tab
+  const tab = await chrome.tabs.create({
+    url: "https://smailpro.com/temporary-email",
+    active: true,
+  });
+  
+  console.log("[TempMail] Opened smailpro tab:", tab.id);
+  
+  // Store a promise that resolves when the email is created
+  return new Promise((resolve) => {
+    // Listen for the email created message from the content script
+    const listener = (message, sender, sendResponse) => {
+      if (message.action === "gmailCreated" && sender.tab && sender.tab.id === tab.id) {
+        chrome.runtime.onMessage.removeListener(listener);
+        
+        currentEmail = message.email;
+        currentPassword = null; // Gmail doesn't need a password from us
+        inboxMessages = [];
+        
+        chrome.storage.local.set({
+          currentEmail: message.email,
+          currentPassword: null,
+          emailTimestamp: Date.now(),
+          emailType: "gmail",
+        });
+        
+        // Notify all tabs
+        chrome.tabs.query({}, (tabs) => {
+          tabs.forEach((t) => {
+            chrome.tabs.sendMessage(t.id, {
+              action: "emailCreated",
+              email: currentEmail,
+              password: currentPassword,
+            }).catch(() => {});
+          });
+        });
+        
+        chrome.runtime.sendMessage({
+          action: "emailCreated",
+          email: currentEmail,
+          password: currentPassword,
+        }).catch(() => {});
+        
+        startInboxPolling();
+        
+        // Close the smailpro tab after a short delay
+        setTimeout(() => {
+          chrome.tabs.remove(tab.id).catch(() => {});
+        }, 1000);
+        
+        resolve({ email: currentEmail, password: currentPassword });
+      }
+    };
+    
+    chrome.runtime.onMessage.addListener(listener);
+    
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(listener);
+      chrome.tabs.remove(tab.id).catch(() => {});
+      resolve(null);
+    }, 30000);
+  });
+}
+
+async function createOutlookEmail() {
+  console.log("[TempMail] Creating Outlook via smailpro.com...");
+  
+  const tab = await chrome.tabs.create({
+    url: "https://smailpro.com/temporary-email",
+    active: true,
+  });
+  
+  console.log("[TempMail] Opened smailpro tab:", tab.id);
+  
+  return new Promise((resolve) => {
+    const listener = (message, sender, sendResponse) => {
+      if (message.action === "outlookCreated" && sender.tab && sender.tab.id === tab.id) {
+        chrome.runtime.onMessage.removeListener(listener);
+        
+        currentEmail = message.email;
+        currentPassword = null;
+        inboxMessages = [];
+        
+        chrome.storage.local.set({
+          currentEmail: message.email,
+          currentPassword: null,
+          emailTimestamp: Date.now(),
+          emailType: "outlook",
+        });
+        
+        chrome.tabs.query({}, (tabs) => {
+          tabs.forEach((t) => {
+            chrome.tabs.sendMessage(t.id, {
+              action: "emailCreated",
+              email: currentEmail,
+              password: currentPassword,
+            }).catch(() => {});
+          });
+        });
+        
+        chrome.runtime.sendMessage({
+          action: "emailCreated",
+          email: currentEmail,
+          password: currentPassword,
+        }).catch(() => {});
+        
+        startInboxPolling();
+        
+        setTimeout(() => {
+          chrome.tabs.remove(tab.id).catch(() => {});
+        }, 1000);
+        
+        resolve({ email: currentEmail, password: currentPassword });
+      }
+    };
+    
+    chrome.runtime.onMessage.addListener(listener);
+    
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(listener);
+      chrome.tabs.remove(tab.id).catch(() => {});
+      resolve(null);
+    }, 30000);
+  });
+}
+
 async function checkInbox() {
   if (!currentEmail) return [];
   
@@ -437,6 +571,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case "createEmail":
       createEmail(message.customName).then((result) => {
+        sendResponse(result);
+      });
+      return true; // async
+
+    case "createGmail":
+      createGmailEmail().then((result) => {
+        sendResponse(result);
+      });
+      return true; // async
+
+    case "createOutlook":
+      createOutlookEmail().then((result) => {
         sendResponse(result);
       });
       return true; // async
