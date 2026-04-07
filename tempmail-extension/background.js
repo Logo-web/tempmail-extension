@@ -78,6 +78,7 @@ async function getPayload(url, email = null, mid = null) {
         "Accept": "*/*",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
+      keepalive: true,
     });
     if (response.status === 429) {
       const data = await response.json().catch(() => ({}));
@@ -106,6 +107,7 @@ async function apiRequest(endpoint, params = {}) {
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
+      keepalive: true,
     });
     if (!response.ok) {
       console.warn(`[TempMail] API failed: ${response.status}`);
