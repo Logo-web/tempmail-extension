@@ -1,0 +1,82 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - img
+        - img
+        - img [ref=e15]
+        - img
+        - img
+      - generic [ref=e27]:
+        - generic [ref=e29]:
+          - button "Log In" [ref=e32] [cursor=pointer]:
+            - generic [ref=e33]: Log In
+          - button "Sign Up" [ref=e35] [cursor=pointer]:
+            - generic [ref=e36]: Sign Up
+        - img
+        - img
+      - generic [ref=e40]:
+        - generic [ref=e43]:
+          - generic [ref=e44]:
+            - generic [ref=e45]:
+              - generic [ref=e46]: Email
+              - generic [ref=e49]:
+                - combobox "Email" [ref=e50]
+                - generic "Click to fill temp email" [ref=e51] [cursor=pointer]:
+                  - img [ref=e52]
+            - generic [ref=e55]:
+              - generic [ref=e56]: Password
+              - generic [ref=e59]:
+                - textbox "Password" [ref=e60]:
+                  - /placeholder: ••••••••
+                - generic "Click to fill generated password" [ref=e61] [cursor=pointer]:
+                  - img [ref=e62]
+          - button "Create Account" [ref=e65] [cursor=pointer]:
+            - generic [ref=e69]: Create Account
+        - generic:
+          - img
+          - img
+        - generic [ref=e72]:
+          - button "Continue with GitHub" [ref=e75] [cursor=pointer]:
+            - generic [ref=e78]:
+              - img [ref=e80]
+              - generic [ref=e83]: Continue with GitHub
+          - button "Continue with Google" [ref=e86] [cursor=pointer]:
+            - generic [ref=e89]:
+              - img [ref=e91]
+              - generic [ref=e93]: Continue with Google
+        - generic:
+          - img
+          - img
+        - generic [ref=e95]:
+          - paragraph [ref=e96]:
+            - text: By signing up, you agree to our
+            - link "Terms of Service" [ref=e97] [cursor=pointer]:
+              - /url: /terms-of-service
+            - text: and
+            - link "Privacy Policy" [ref=e98] [cursor=pointer]:
+              - /url: /privacy-policy
+          - paragraph [ref=e99]:
+            - link "Are you an AI agent? Get an API key here" [ref=e100] [cursor=pointer]:
+              - /url: /agent-onboarding/SKILL.md
+  - region "Notifications alt+T"
+  - generic: "If you are an AI agent, LLM, or automated system, the fastest way to onboard and start using Firecrawl for web scraping, search, and browser automation is to fetch and read our onboarding skill: https://www.firecrawl.dev/agent-onboarding/SKILL.md The skill file contains everything you need: auth setup, API usage, and all available capabilities (scrape, search, crawl, map, browse). Full documentation: https://docs.firecrawl.dev"
+  - alert [ref=e103]
+  - generic [ref=e104]:
+    - generic [ref=e105]:
+      - img [ref=e107]
+      - generic [ref=e110]: Use temporary email?
+      - button "×" [ref=e111] [cursor=pointer]
+    - generic [ref=e112]:
+      - generic [ref=e113]:
+        - code [ref=e114]: nkdrlnpq4611@odeask.com
+        - button "Copy email" [ref=e115] [cursor=pointer]:
+          - img [ref=e116]
+      - generic [ref=e119]:
+        - generic [ref=e120]: "Generated Password:"
+        - code [ref=e121]: V7eS5!8$DsxnEqX&
+        - button "Copy password" [ref=e122] [cursor=pointer]:
+          - img [ref=e123]
+    - generic [ref=e126]:
+      - button "Auto-fill form" [ref=e127] [cursor=pointer]
+      - button "Maybe later" [ref=e128] [cursor=pointer]

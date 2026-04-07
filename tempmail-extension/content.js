@@ -188,6 +188,18 @@
         if (!field.dataset.tempmailAttached) {
           field.dataset.tempmailAttached = "true";
           addTempmailIndicator(field);
+
+          // On focus, always refresh from storage (catches late email creation)
+          field.addEventListener("focus", async () => {
+            const saved = await chrome.storage.local.get(["currentEmail", "currentPassword"]);
+            if (saved.currentEmail && (!emailData || emailData.email !== saved.currentEmail)) {
+              emailData = {
+                email: saved.currentEmail,
+                password: saved.currentPassword || "",
+              };
+              updateDatalists();
+            }
+          });
         }
       }
     });
@@ -206,6 +218,18 @@
         if (!field.dataset.tempmailPwAttached) {
           field.dataset.tempmailPwAttached = "true";
           addPasswordIndicator(field);
+
+          // On focus, always refresh from storage
+          field.addEventListener("focus", async () => {
+            const saved = await chrome.storage.local.get(["currentEmail", "currentPassword"]);
+            if (saved.currentEmail && (!emailData || emailData.email !== saved.currentEmail)) {
+              emailData = {
+                email: saved.currentEmail,
+                password: saved.currentPassword || "",
+              };
+              updateDatalists();
+            }
+          });
         }
       }
     });
@@ -680,6 +704,59 @@
     }
     if (shouldScan) {
       setTimeout(scanForForms, 100);
+    }
+  });
+
+  // ============================================================================
+  // Listen for storage changes (survives service worker restarts)
+  // ============================================================================
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+
+    if (changes.currentEmail || changes.currentPassword) {
+      emailData = {
+        email: changes.currentEmail?.newValue || emailData?.email || "",
+        password: changes.currentPassword?.newValue || emailData?.password || "",
+      };
+      if (emailData.email) {
+        updateDatalists();
+        scanForForms();
+      }
+    }
+
+    if (changes.inboxMessages) {
+      const newMessages = changes.inboxMessages.newValue || [];
+      const oldMessages = changes.inboxMessages.oldValue || [];
+      if (newMessages.length > oldMessages.length) {
+        const added = newMessages.slice(0, newMessages.length - oldMessages.length);
+        for (const msg of added) {
+          const text = msg.body || msg.subject || "";
+          const otp = extractOTP(text);
+          if (otp) {
+            otpDetected = {
+              code: otp,
+              from: msg.from || msg.from_email || "",
+              subject: msg.subject || "",
+            };
+            if (settings.otpAutoFill) {
+              const otpField = findOTPField();
+              if (otpField && !otpField.value) {
+                showOTPWidget(otp, otpDetected.from, otpDetected.subject);
+              }
+            }
+          }
+          // Check for verification links
+          const body = msg.body || msg.body_html || "";
+          const links = extractVerificationLinks(body);
+          if (links.length > 0) {
+            verificationLinks = links;
+            verificationLinksFrom = msg.from || msg.from_email || "";
+            verificationLinksSubject = msg.subject || "";
+            showVerificationWidget(links, verificationLinksFrom, verificationLinksSubject);
+          }
+        }
+      }
     }
   });
 
