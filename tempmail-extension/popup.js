@@ -252,9 +252,21 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    // Display body (strip HTML for safety)
+    // Display body with all links opening in new tabs
     const body = msg.body || msg.body_html || "No content";
-    modalBody.innerHTML = body;
+    // Add target="_blank" to all links
+    const bodyWithTarget = body.replace(/<a\s/gi, '<a target="_blank" rel="noopener" ');
+    modalBody.innerHTML = bodyWithTarget;
+
+    // Intercept all link clicks to open in new tab
+    modalBody.addEventListener("click", (e) => {
+      const link = e.target.closest("a");
+      if (link && link.href) {
+        e.preventDefault();
+        e.stopPropagation();
+        chrome.tabs.create({ url: link.href });
+      }
+    });
 
     messageModal.classList.remove("hidden");
   }
