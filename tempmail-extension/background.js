@@ -9,7 +9,6 @@ const PAYLOAD_URL = "https://smailpro.com/app/payload";
 let currentEmail = null;
 let currentPassword = null;
 let inboxMessages = [];
-let pollingInterval = null;
 let isPolling = false;
 
 // ============================================================================
@@ -391,25 +390,12 @@ function startInboxPolling() {
   
   isPolling = true;
   
-  const poll = async () => {
-    const settings = await chrome.storage.local.get(["autoCheckInbox", "inboxPollInterval"]);
-    if (!settings.autoCheckInbox) return;
-    
-    await checkInbox();
-  };
-  
-  // Initial check
-  poll();
-  
-  // Set up interval
-  pollingInterval = setInterval(poll, 5000);
+  // Use chrome.alarms for reliable background polling in MV3
+  chrome.alarms.create("inboxPoll", { periodInMinutes: 0.083 }); // ~5 seconds
 }
 
 function stopInboxPolling() {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
-    pollingInterval = null;
-  }
+  chrome.alarms.clear("inboxPoll");
   isPolling = false;
 }
 
