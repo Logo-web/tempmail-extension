@@ -674,7 +674,34 @@
 
   function showRegistrationPrompt(emailField, passwordField) {
     const existing = document.getElementById("tempmail-widget");
-    if (existing) return;
+    if (existing) {
+      // Update existing widget with new email
+      const emailText = existing.querySelector(".tempmail-email-text");
+      const pwText = existing.querySelector(".tempmail-password-text");
+      const fillBtn = existing.querySelector(".tempmail-btn-fill");
+      const copyEmailBtn = existing.querySelector(".tempmail-copy-btn[data-copy]");
+      const copyPwBtn = existing.querySelectorAll(".tempmail-copy-btn[data-copy]");
+      if (emailText) emailText.textContent = emailData.email;
+      if (pwText) pwText.textContent = emailData.password;
+      if (copyEmailBtn) copyEmailBtn.setAttribute("data-copy", emailData.email);
+      if (copyPwBtn && copyPwBtn[1]) copyPwBtn[1].setAttribute("data-copy", emailData.password);
+      if (fillBtn) {
+        fillBtn.onclick = () => {
+          if (emailField) {
+            emailField.value = emailData.email;
+            emailField.dispatchEvent(new Event("input", { bubbles: true }));
+            emailField.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          if (passwordField) {
+            passwordField.value = emailData.password;
+            passwordField.dispatchEvent(new Event("input", { bubbles: true }));
+            passwordField.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          existing.remove();
+        };
+      }
+      return;
+    }
 
     createPromptWidget(
       emailData.email,
@@ -727,6 +754,40 @@
         email: newEmail,
         password: newPw,
       };
+
+      // Update existing prompt widget if visible
+      const existingWidget = document.getElementById("tempmail-widget");
+      if (existingWidget) {
+        const emailText = existingWidget.querySelector(".tempmail-email-text");
+        const pwText = existingWidget.querySelector(".tempmail-password-text");
+        const copyEmailBtn = existingWidget.querySelector('.tempmail-copy-btn[data-copy]');
+        const copyPwBtns = existingWidget.querySelectorAll('.tempmail-copy-btn[data-copy]');
+        if (emailText) emailText.textContent = newEmail;
+        if (pwText) pwText.textContent = newPw;
+        if (copyEmailBtn) copyEmailBtn.setAttribute("data-copy", newEmail);
+        if (copyPwBtns && copyPwBtns[1]) copyPwBtns[1].setAttribute("data-copy", newPw);
+        // Update fill button onclick
+        const fillBtn = existingWidget.querySelector(".tempmail-btn-fill");
+        if (fillBtn) {
+          fillBtn.replaceWith(fillBtn.cloneNode(true));
+          existingWidget.querySelector(".tempmail-btn-fill").addEventListener("click", () => {
+            const ef = findEmailField(document) || document.querySelector('input[type="email"], input[name*="email" i]');
+            const pf = findPasswordField(document) || document.querySelector('input[type="password"]');
+            if (ef) {
+              ef.value = newEmail;
+              ef.dispatchEvent(new Event("input", { bubbles: true }));
+              ef.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            if (pf) {
+              pf.value = newPw;
+              pf.dispatchEvent(new Event("input", { bubbles: true }));
+              pf.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            existingWidget.remove();
+          });
+        }
+      }
+
       if (emailData.email) {
         console.log("[TempMail] Updating datalists and scanning forms");
         updateDatalists();
