@@ -484,11 +484,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "inboxPoll") {
-    await checkInbox();
+    await ensureState();
+    if (currentEmail) {
+      await checkInbox();
+    }
   }
 });
 
-// Set up alarm on startup
-chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create("inboxPoll", { periodInMinutes: 0.083 }); // ~5 seconds
+// Keep service worker alive during async operations
+chrome.runtime.onSuspend.addListener(() => {
+  console.log("[TempMail] Service worker suspending");
 });
