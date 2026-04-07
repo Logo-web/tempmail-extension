@@ -152,32 +152,52 @@
   function updateDatalists() {
     if (!emailData || !emailData.email) return;
 
-    // Update existing datalist values (don't remove elements - keeps list attrs valid)
+    // Update email datalist - update option in place to avoid closing dropdown
     let emailDatalist = document.getElementById(DATALIST_ID);
     if (!emailDatalist) {
       emailDatalist = document.createElement("datalist");
       emailDatalist.id = DATALIST_ID;
       document.body.appendChild(emailDatalist);
+      const emailOption = document.createElement("option");
+      emailOption.value = emailData.email;
+      emailDatalist.appendChild(emailOption);
+    } else {
+      // Update existing option value instead of clearing (prevents dropdown close)
+      const existingOption = emailDatalist.querySelector("option");
+      if (existingOption) {
+        existingOption.value = emailData.email;
+      } else {
+        const emailOption = document.createElement("option");
+        emailOption.value = emailData.email;
+        emailDatalist.appendChild(emailOption);
+      }
     }
-    emailDatalist.innerHTML = "";
-    const emailOption = document.createElement("option");
-    emailOption.value = emailData.email;
-    emailDatalist.appendChild(emailOption);
 
+    // Update password datalist
     let pwDatalist = document.getElementById(DATALIST_ID_PW);
     if (!pwDatalist) {
       pwDatalist = document.createElement("datalist");
       pwDatalist.id = DATALIST_ID_PW;
       document.body.appendChild(pwDatalist);
-    }
-    pwDatalist.innerHTML = "";
-    if (emailData.password) {
-      const pwOption = document.createElement("option");
-      pwOption.value = emailData.password;
-      pwDatalist.appendChild(pwOption);
+      if (emailData.password) {
+        const pwOption = document.createElement("option");
+        pwOption.value = emailData.password;
+        pwDatalist.appendChild(pwOption);
+      }
+    } else {
+      if (emailData.password) {
+        const existingOption = pwDatalist.querySelector("option");
+        if (existingOption) {
+          existingOption.value = emailData.password;
+        } else {
+          const pwOption = document.createElement("option");
+          pwOption.value = emailData.password;
+          pwDatalist.appendChild(pwOption);
+        }
+      }
     }
 
-    // Always attach to all fields (don't skip existing ones)
+    // Always attach to all fields
     attachEmailDatalist(true);
     attachPasswordDatalist(true);
   }
@@ -632,10 +652,13 @@
   // Form Observer
   // ============================================================================
 
+  let datalistsAttached = false;
+
   function scanForForms() {
-    // 1. Update datalists on email and password fields
-    if (emailData) {
+    // 1. Attach datalists to fields (only once per page load)
+    if (emailData && !datalistsAttached) {
       updateDatalists();
+      datalistsAttached = true;
     }
 
     // 2. Check for registration forms (classic)
