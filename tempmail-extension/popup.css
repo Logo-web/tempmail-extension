@@ -109,6 +109,24 @@ body {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.email-type-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  background: #f8fafc;
+  color: #1e293b;
+  cursor: pointer;
+  outline: none;
+}
+
+.email-type-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
 .email-field {
   margin-bottom: 10px;
 }
@@ -228,33 +246,6 @@ body {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none !important;
-}
-
-.create-options {
-  display: flex;
-  gap: 6px;
-}
-
-.gmail-btn {
-  background: linear-gradient(135deg, #ea4335, #fbbc05);
-  color: #ffffff;
-}
-
-.gmail-btn:hover {
-  background: linear-gradient(135deg, #d93025, #f9ab00);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(234, 67, 53, 0.4);
-}
-
-.outlook-btn {
-  background: linear-gradient(135deg, #0078d4, #005a9e);
-  color: #ffffff;
-}
-
-.outlook-btn:hover {
-  background: linear-gradient(135deg, #006cbd, #004578);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 120, 212, 0.4);
 }
 
 /* Inbox */
@@ -524,6 +515,12 @@ body {
   .email-display {
     background: #1e293b;
     border-color: #334155;
+  }
+
+  .email-type-select {
+    background: #0f172a;
+    border-color: #334155;
+    color: #e2e8f0;
   }
 
   .field-row input {

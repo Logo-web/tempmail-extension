@@ -135,7 +135,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Event Handlers
   // ============================================================================
 
-  // Create new email
+  // Create new email (handles all types)
+  const emailTypeSelect = document.getElementById("email-type");
+
   createEmailBtn.addEventListener("click", async () => {
     createEmailBtn.disabled = true;
     createEmailBtn.innerHTML = `
@@ -145,7 +147,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       Creating...
     `;
 
-    const result = await chrome.runtime.sendMessage({ action: "createEmail" });
+    const type = emailTypeSelect ? emailTypeSelect.value : "other";
+    let action = "createEmail";
+    if (type === "google") action = "createGmail";
+    if (type === "microsoft") action = "createOutlook";
+
+    const result = await chrome.runtime.sendMessage({ action });
     if (result) {
       currentEmailData = result;
       updateUI(result);
@@ -157,45 +164,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         <line x1="12" y1="5" x2="12" y2="19"/>
         <line x1="5" y1="12" x2="19" y2="12"/>
       </svg>
-      New Temp Email
+      New Email
     `;
   });
-
-  // Create Gmail
-  const createGmailBtn = document.getElementById("create-gmail");
-  if (createGmailBtn) {
-    createGmailBtn.addEventListener("click", async () => {
-      createGmailBtn.disabled = true;
-      createGmailBtn.textContent = "Creating Gmail...";
-
-      const result = await chrome.runtime.sendMessage({ action: "createGmail" });
-      if (result) {
-        currentEmailData = result;
-        updateUI(result);
-      }
-
-      createGmailBtn.disabled = false;
-      createGmailBtn.textContent = "Gmail";
-    });
-  }
-
-  // Create Outlook
-  const createOutlookBtn = document.getElementById("create-outlook");
-  if (createOutlookBtn) {
-    createOutlookBtn.addEventListener("click", async () => {
-      createOutlookBtn.disabled = true;
-      createOutlookBtn.textContent = "Creating Outlook...";
-
-      const result = await chrome.runtime.sendMessage({ action: "createOutlook" });
-      if (result) {
-        currentEmailData = result;
-        updateUI(result);
-      }
-
-      createOutlookBtn.disabled = false;
-      createOutlookBtn.textContent = "Outlook";
-    });
-  }
 
   // Refresh inbox
   refreshInboxBtn.addEventListener("click", async () => {

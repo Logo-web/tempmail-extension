@@ -69,29 +69,20 @@
 
     <!-- Actions -->
     <section class="actions-section">
+      <select id="email-type" class="email-type-select">
+        <option value="other">Temp Mail (Free)</option>
+        <option value="google">Gmail (Free)</option>
+        <option value="microsoft">Outlook (Free)</option>
+      </select>
+    </section>
+    <section class="actions-section">
       <button id="create-email" class="action-btn primary">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19"/>
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
-        New Temp Email
+        New Email
       </button>
-      <div class="create-options">
-        <button id="create-gmail" class="action-btn gmail-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="4" width="20" height="16" rx="2"/>
-            <path d="M22 4L12 13L2 4"/>
-          </svg>
-          Gmail
-        </button>
-        <button id="create-outlook" class="action-btn outlook-btn">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="4" width="20" height="16" rx="2"/>
-            <path d="M22 4L12 13L2 4"/>
-          </svg>
-          Outlook
-        </button>
-      </div>
       <button id="refresh-inbox" class="action-btn secondary">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10"/>
@@ -99,15 +90,6 @@
         </svg>
         Refresh Inbox
       </button>
-    </section>
-
-    <!-- Manual Email Input -->
-    <section class="manual-section">
-      <label class="manual-label">Or enter email manually:</label>
-      <div class="manual-input-row">
-        <input type="text" id="manual-email" placeholder="e.g. user@gmail.com">
-        <button id="manual-save" class="manual-save-btn">Save</button>
-      </div>
     </section>
 
     <!-- Inbox Section -->

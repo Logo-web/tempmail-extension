@@ -4,12 +4,151 @@
 
 const BASE_API_URL = "https://api.sonjj.com/v1/temp_email";
 const PAYLOAD_URL = "https://smailpro.com/app/payload";
+const SMAILPRO_CREATE_URL = "https://smailpro.com/app/create";
+const RECAPTCHA_SITE_KEY = "6Ldd8-IUAAAAAIdqbOociFKyeBGFsp3nNUM_6_SC";
 
 // State
 let currentEmail = null;
 let currentPassword = null;
 let inboxMessages = [];
 let isPolling = false;
+
+// ============================================================================
+// reCAPTCHA V3 Bypass (ported from freecaptcha Python library)
+// ============================================================================
+
+async function solveRecaptchaV3() {
+  // Step 1: Get anchor page
+  const anchorUrl = `https://www.google.com/recaptcha/api2/anchor?ar=1&k=${RECAPTCHA_SITE_KEY}&co=aHR0cHM6Ly9zbWFpbHByby5jb206NDQz&hl=en&v=abc123&size=invisible&cb=smailpro`;
+
+  const anchorResp = await fetch(anchorUrl);
+  const anchorHtml = await anchorResp.text();
+
+  // Extract recaptcha-token
+  const tokenMatch = anchorHtml.match(/id="recaptcha-token"\s*value="(.*?)"/);
+  if (!tokenMatch) {
+    throw new Error("Failed to extract recaptcha-token from anchor");
+  }
+
+  const recapToken = tokenMatch[1];
+
+  // Step 2: Send reload request
+  const reloadUrl = `https://www.google.com/recaptcha/api2/reload?k=${RECAPTCHA_SITE_KEY}`;
+
+  const params = new URLSearchParams();
+  params.set("v", "abc123");
+  params.set("reason", "q");
+  params.set("c", recapToken);
+  params.set("k", RECAPTCHA_SITE_KEY);
+  params.set("co", "aHR0cHM6Ly9zbWFpbHByby5jb206NDQz");
+  params.set("hl", "en");
+  params.set("size", "invisible");
+  params.set("chr", "");
+  params.set("vh", "");
+  params.set("bg", "");
+  params.set("ar", "1");
+
+  const reloadResp = await fetch(reloadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+
+  const reloadText = await reloadResp.text();
+
+  // Parse response - it's JSON prefixed with ")]}'\n"
+  const jsonStr = reloadText.substring(5);
+  const data = JSON.parse(jsonStr);
+  return data[1]; // Token is at index 1
+}
+
+// ============================================================================
+// Gmail/Outlook Creation via smailpro.com
+// ============================================================================
+
+async function createGmailOrOutlook(type = "google") {
+  console.log(`[TempMail] Creating ${type} email...`);
+
+  // Solve reCAPTCHA
+  let captchaToken;
+  try {
+    captchaToken = await solveRecaptchaV3();
+    console.log("[TempMail] Captcha solved, token length:", captchaToken.length);
+  } catch (e) {
+    console.error("[TempMail] Captcha solve failed:", e);
+    return null;
+  }
+
+  // First get the page to establish session cookies
+  await fetch("https://smailpro.com/temporary-email", {
+    method: "GET",
+    credentials: "include",
+  });
+
+  // Build request
+  const domain = type === "google" ? "gmail.com" : "outlook.com";
+  const params = new URLSearchParams({
+    username: "random",
+    type: "alias",
+    domain: domain,
+    server: "1",
+  });
+
+  const resp = await fetch(`${SMAILPRO_CREATE_URL}?${params.toString()}`, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      "Accept": "application/json",
+      "x-captcha": captchaToken,
+    },
+  });
+
+  if (!resp.ok) {
+    const error = await resp.json().catch(() => ({}));
+    console.error("[TempMail] Create email failed:", error);
+    return null;
+  }
+
+  const data = await resp.json();
+  console.log("[TempMail] Created:", data.address);
+
+  currentEmail = data.address;
+  currentPassword = generatePassword();
+  inboxMessages = [];
+
+  await chrome.storage.local.set({
+    currentEmail: data.address,
+    currentPassword: currentPassword,
+    emailTimestamp: data.timestamp * 1000,
+    emailType: type,
+  });
+
+  // Notify all tabs
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: "emailCreated",
+          email: currentEmail,
+          password: currentPassword,
+        });
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  chrome.runtime.sendMessage({
+    action: "emailCreated",
+    email: currentEmail,
+    password: currentPassword,
+  }).catch(() => {});
+
+  startInboxPolling();
+
+  return { email: currentEmail, password: currentPassword, type: type };
+}
 
 // ============================================================================
 // Initialization
@@ -179,140 +318,6 @@ async function createEmail(customName = null) {
     console.error("[TempMail] createEmail error:", e);
     return null;
   }
-}
-
-// ============================================================================
-// Gmail/Outlook Creation via smailpro.com page
-// ============================================================================
-
-async function createGmailEmail() {
-  console.log("[TempMail] Creating Gmail via smailpro.com...");
-  
-  // Open smailpro in a new tab
-  const tab = await chrome.tabs.create({
-    url: "https://smailpro.com/temporary-email",
-    active: true,
-  });
-  
-  console.log("[TempMail] Opened smailpro tab:", tab.id);
-  
-  // Store a promise that resolves when the email is created
-  return new Promise((resolve) => {
-    // Listen for the email created message from the content script
-    const listener = (message, sender, sendResponse) => {
-      if (message.action === "gmailCreated" && sender.tab && sender.tab.id === tab.id) {
-        chrome.runtime.onMessage.removeListener(listener);
-        
-        currentEmail = message.email;
-        currentPassword = null; // Gmail doesn't need a password from us
-        inboxMessages = [];
-        
-        chrome.storage.local.set({
-          currentEmail: message.email,
-          currentPassword: null,
-          emailTimestamp: Date.now(),
-          emailType: "gmail",
-        });
-        
-        // Notify all tabs
-        chrome.tabs.query({}, (tabs) => {
-          tabs.forEach((t) => {
-            chrome.tabs.sendMessage(t.id, {
-              action: "emailCreated",
-              email: currentEmail,
-              password: currentPassword,
-            }).catch(() => {});
-          });
-        });
-        
-        chrome.runtime.sendMessage({
-          action: "emailCreated",
-          email: currentEmail,
-          password: currentPassword,
-        }).catch(() => {});
-        
-        startInboxPolling();
-        
-        // Close the smailpro tab after a short delay
-        setTimeout(() => {
-          chrome.tabs.remove(tab.id).catch(() => {});
-        }, 1000);
-        
-        resolve({ email: currentEmail, password: currentPassword });
-      }
-    };
-    
-    chrome.runtime.onMessage.addListener(listener);
-    
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(listener);
-      chrome.tabs.remove(tab.id).catch(() => {});
-      resolve(null);
-    }, 30000);
-  });
-}
-
-async function createOutlookEmail() {
-  console.log("[TempMail] Creating Outlook via smailpro.com...");
-  
-  const tab = await chrome.tabs.create({
-    url: "https://smailpro.com/temporary-email",
-    active: true,
-  });
-  
-  console.log("[TempMail] Opened smailpro tab:", tab.id);
-  
-  return new Promise((resolve) => {
-    const listener = (message, sender, sendResponse) => {
-      if (message.action === "outlookCreated" && sender.tab && sender.tab.id === tab.id) {
-        chrome.runtime.onMessage.removeListener(listener);
-        
-        currentEmail = message.email;
-        currentPassword = null;
-        inboxMessages = [];
-        
-        chrome.storage.local.set({
-          currentEmail: message.email,
-          currentPassword: null,
-          emailTimestamp: Date.now(),
-          emailType: "outlook",
-        });
-        
-        chrome.tabs.query({}, (tabs) => {
-          tabs.forEach((t) => {
-            chrome.tabs.sendMessage(t.id, {
-              action: "emailCreated",
-              email: currentEmail,
-              password: currentPassword,
-            }).catch(() => {});
-          });
-        });
-        
-        chrome.runtime.sendMessage({
-          action: "emailCreated",
-          email: currentEmail,
-          password: currentPassword,
-        }).catch(() => {});
-        
-        startInboxPolling();
-        
-        setTimeout(() => {
-          chrome.tabs.remove(tab.id).catch(() => {});
-        }, 1000);
-        
-        resolve({ email: currentEmail, password: currentPassword });
-      }
-    };
-    
-    chrome.runtime.onMessage.addListener(listener);
-    
-    setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(listener);
-      chrome.tabs.remove(tab.id).catch(() => {});
-      resolve(null);
-    }, 30000);
-  });
 }
 
 async function checkInbox() {
@@ -576,13 +581,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // async
 
     case "createGmail":
-      createGmailEmail().then((result) => {
+      createGmailOrOutlook("google").then((result) => {
         sendResponse(result);
       });
       return true; // async
 
     case "createOutlook":
-      createOutlookEmail().then((result) => {
+      createGmailOrOutlook("microsoft").then((result) => {
         sendResponse(result);
       });
       return true; // async
