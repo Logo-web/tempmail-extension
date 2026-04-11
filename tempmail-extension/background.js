@@ -275,12 +275,23 @@ async function checkGmailOutlookInbox() {
 
     consecutiveFailures = 0;
 
-    if (!data || !data.messages) return inboxMessages;
+    // Handle different response formats
+    let messages = data;
+    if (data && data.messages) {
+      messages = data.messages;
+    } else if (data && Array.isArray(data)) {
+      messages = data;
+    } else if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
+      console.log("[TempMail] Gmail/Outlook inbox: empty response");
+      return inboxMessages;
+    }
+    
+    console.log("[TempMail] Gmail/Outlook messages:", JSON.stringify(messages));
 
     const existingMids = new Set(inboxMessages.map((m) => m.mid));
     let newMessages = [];
 
-    for (const msg of data.messages) {
+    for (const msg of messages) {
       if (!existingMids.has(msg.mid)) {
         newMessages.push(msg);
         inboxMessages.unshift(msg);
