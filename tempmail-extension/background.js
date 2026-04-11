@@ -230,29 +230,29 @@ async function ensureState() {
 async function checkGmailOutlookInbox() {
   if (!currentEmail) return [];
 
+  // Gmail/Outlook uses api.sonjj.com with GET and JWT key as payload
+  if (!emailKey) {
+    console.log("[TempMail] Gmail/Outlook inbox: no key available");
+    consecutiveFailures++;
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
+      isEmailDead = true;
+      await chrome.storage.local.set({ isEmailDead: true });
+      notifyEmailDead();
+    }
+    return inboxMessages;
+  }
+
   try {
-    // First establish session by visiting the page
-    await fetch("https://smailpro.com/temporary-email", {
-      credentials: "include",
-    });
+    const inboxUrl = `https://api.sonjj.com/v1/temp_gmail/inbox?payload=${encodeURIComponent(emailKey)}`;
+    console.log("[TempMail] Checking Gmail/Outlook inbox:", inboxUrl);
 
-    // Build request body - must be array of objects with address, timestamp, key
-    const requestBody = [{
-      address: currentEmail,
-      timestamp: Math.floor(emailCreatedAt / 1000),
-      key: emailKey
-    }];
-    
-    console.log("[TempMail] Checking Gmail/Outlook inbox with body:", JSON.stringify(requestBody));
-
-    const response = await fetch("https://smailpro.com/app/inbox", {
-      method: "POST",
+    const response = await fetch(inboxUrl, {
+      method: "GET",
       credentials: "include",
       headers: {
-        "Content-Type": "application/json",
         "Referer": "https://smailpro.com/temporary-email",
+        "Origin": "https://smailpro.com",
       },
-      body: JSON.stringify(requestBody),
     });
 
     console.log("[TempMail] Gmail/Outlook inbox response:", response.status, response.statusText);
@@ -551,17 +551,22 @@ async function readGmailOutlookMessage(mid) {
   const cached = inboxMessages.find((m) => m.mid === mid);
   if (cached && cached.body) return cached;
 
-  try {
-    const params = new URLSearchParams({
-      email: currentEmail,
-      mid: mid,
-    });
-    if (emailKey) {
-      params.set("key", emailKey);
-    }
+  // Gmail/Outlook uses api.sonjj.com with GET and JWT key as payload
+  if (!emailKey) {
+    console.log("[TempMail] Gmail/Outlook read message: no key available");
+    return null;
+  }
 
-    const response = await fetch(`https://smailpro.com/app/message?${params.toString()}`, {
+  try {
+    const messageUrl = `https://api.sonjj.com/v1/temp_gmail/message?payload=${encodeURIComponent(emailKey)}&mid=${encodeURIComponent(mid)}`;
+    console.log("[TempMail] Reading Gmail/Outlook message:", messageUrl);
+
+    const response = await fetch(messageUrl, {
       credentials: "include",
+      headers: {
+        "Referer": "https://smailpro.com/temporary-email",
+        "Origin": "https://smailpro.com",
+      },
     });
 
     if (!response.ok) return null;
