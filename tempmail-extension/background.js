@@ -230,9 +230,11 @@ async function ensureState() {
 async function checkGmailOutlookInbox() {
   if (!currentEmail) return [];
 
+  console.log("[TempMail] checkGmailOutlookInbox called, email:", currentEmail, "key:", emailKey ? "present" : "null");
+
   // Gmail/Outlook uses api.sonjj.com with GET and JWT key as payload
   if (!emailKey) {
-    console.log("[TempMail] Gmail/Outlook inbox: no key available");
+    console.log("[TempMail] Gmail/Outlook inbox: no key available, incrementing failures");
     consecutiveFailures++;
     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
       isEmailDead = true;
