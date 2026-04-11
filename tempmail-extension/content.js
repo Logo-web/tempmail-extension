@@ -1039,4 +1039,51 @@
   } else {
     init();
   }
+
+  // ============================================================================
+  // Test Helper - exposed as window.tempmailTest
+  // ============================================================================
+  window.tempmailTest = {
+    async getEmail() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "getEmail" }, resolve);
+      });
+    },
+    async createEmail() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "createEmail" }, resolve);
+      });
+    },
+    async createGmail() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "createGmail" }, resolve);
+      });
+    },
+    async createOutlook() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "createOutlook" }, resolve);
+      });
+    },
+    async checkInbox() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "checkInbox" }, resolve);
+      });
+    },
+    async getOTP() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "getOTP" }, resolve);
+      });
+    },
+    async deleteEmail() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "deleteEmail" }, resolve);
+      });
+    },
+    logState() {
+      console.log("[TempMail Test] Current email:", emailData);
+      console.log("[TempMail Test] OTP detected:", otpDetected);
+      console.log("[TempMail Test] Verification links:", verificationLinks);
+    }
+  };
+  console.log("[TempMail] Test helper available as window.tempmailTest");
 })();
