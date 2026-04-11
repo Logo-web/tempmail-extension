@@ -1043,6 +1043,16 @@
   // ============================================================================
   // Test Helper - exposed as window.tempmailTest
   // ============================================================================
+  // Expose debug interface immediately
+  window.__tempmailDebug = {
+  // Test/Debug interface
+  window.__tempmailDebug = {
+    version: "1.0",
+    initialized: true,
+    emailData: emailData,
+  };
+  console.log("[TempMail] Content script loaded, __tempmailDebug available");
+  
   window.tempmailTest = {
     async getEmail() {
       return new Promise((resolve) => {
