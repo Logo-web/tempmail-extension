@@ -127,6 +127,9 @@ async function createGmailOrOutlook(type = "google") {
   emailCreatedAt = Date.now();
   consecutiveFailures = 0;
   isEmailDead = false;
+  emailKey = data.key || null;
+
+  console.log("[TempMail] Extracted key:", emailKey ? emailKey.substring(0, 50) + "..." : "null");
 
   await chrome.storage.local.set({
     currentEmail: data.address,
@@ -135,7 +138,7 @@ async function createGmailOrOutlook(type = "google") {
     emailType: type,
     emailCreatedAt: Date.now(),
     isEmailDead: false,
-    emailKey: data.key || null,
+    emailKey: emailKey,
   });
 
   // Notify all tabs
@@ -233,15 +236,23 @@ async function checkGmailOutlookInbox() {
       credentials: "include",
     });
 
-    // Build inbox URL - try with email and key if available
-    let inboxUrl = `https://smailpro.com/app/inbox?email=${encodeURIComponent(currentEmail)}`;
-    if (emailKey) {
-      inboxUrl += `&key=${encodeURIComponent(emailKey)}`;
-    }
-    console.log("[TempMail] Checking Gmail/Outlook inbox:", inboxUrl);
+    // Build request body - must be array of objects with address, timestamp, key
+    const requestBody = [{
+      address: currentEmail,
+      timestamp: Math.floor(emailCreatedAt / 1000),
+      key: emailKey
+    }];
+    
+    console.log("[TempMail] Checking Gmail/Outlook inbox with body:", JSON.stringify(requestBody));
 
-    const response = await fetch(inboxUrl, {
+    const response = await fetch("https://smailpro.com/app/inbox", {
+      method: "POST",
       credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "Referer": "https://smailpro.com/temporary-email",
+      },
+      body: JSON.stringify(requestBody),
     });
 
     console.log("[TempMail] Gmail/Outlook inbox response:", response.status, response.statusText);
