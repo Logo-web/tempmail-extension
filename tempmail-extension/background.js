@@ -228,7 +228,16 @@ async function checkGmailOutlookInbox() {
   if (!currentEmail) return [];
 
   try {
-    const inboxUrl = `https://smailpro.com/app/inbox?email=${encodeURIComponent(currentEmail)}`;
+    // First establish session by visiting the page
+    await fetch("https://smailpro.com/temporary-email", {
+      credentials: "include",
+    });
+
+    // Build inbox URL - try with email and key if available
+    let inboxUrl = `https://smailpro.com/app/inbox?email=${encodeURIComponent(currentEmail)}`;
+    if (emailKey) {
+      inboxUrl += `&key=${encodeURIComponent(emailKey)}`;
+    }
     console.log("[TempMail] Checking Gmail/Outlook inbox:", inboxUrl);
 
     const response = await fetch(inboxUrl, {
