@@ -17,7 +17,7 @@ let consecutiveFailures = 0;
 let isEmailDead = false;
 let emailKey = null;
 let emailType = "other";
-const MAX_CONSECUTIVE_FAILURES = 5;
+const MAX_CONSECUTIVE_FAILURES = 100;
 
 // ============================================================================
 // reCAPTCHA V3 Bypass (ported from freecaptcha Python library)
