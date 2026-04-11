@@ -228,13 +228,18 @@ async function checkGmailOutlookInbox() {
   if (!currentEmail) return [];
 
   try {
-    const response = await fetch(`https://smailpro.com/app/inbox?email=${encodeURIComponent(currentEmail)}`, {
+    const inboxUrl = `https://smailpro.com/app/inbox?email=${encodeURIComponent(currentEmail)}`;
+    console.log("[TempMail] Checking Gmail/Outlook inbox:", inboxUrl);
+
+    const response = await fetch(inboxUrl, {
       credentials: "include",
     });
 
-    console.log("[TempMail] Gmail/Outlook inbox response status:", response.status);
+    console.log("[TempMail] Gmail/Outlook inbox response:", response.status, response.statusText);
 
     if (!response.ok) {
+      const text = await response.text();
+      console.log("[TempMail] Gmail/Outlook inbox error response:", text.substring(0, 500));
       consecutiveFailures++;
       console.warn(`[TempMail] Gmail/Outlook inbox check failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
@@ -246,7 +251,7 @@ async function checkGmailOutlookInbox() {
     }
 
     const data = await response.json();
-    console.log("[TempMail] Gmail/Outlook inbox data:", data);
+    console.log("[TempMail] Gmail/Outlook inbox data:", JSON.stringify(data, null, 2));
 
     consecutiveFailures = 0;
 

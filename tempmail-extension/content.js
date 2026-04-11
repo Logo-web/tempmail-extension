@@ -1083,7 +1083,23 @@
       console.log("[TempMail Test] Current email:", emailData);
       console.log("[TempMail Test] OTP detected:", otpDetected);
       console.log("[TempMail Test] Verification links:", verificationLinks);
+    },
+    // Direct debug - logs to PAGE console
+    async debug() {
+      const state = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "getEmail" }, resolve);
+      });
+      console.log("[TempMail Debug] Full state:", JSON.stringify(state, null, 2));
+      
+      // Also try to check inbox directly
+      console.log("[TempMail Debug] Calling checkInbox...");
+      const messages = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "checkInbox" }, resolve);
+      });
+      console.log("[TempMail Debug] Inbox messages:", messages);
+      return { state, messages };
     }
   };
   console.log("[TempMail] Test helper available as window.tempmailTest");
+  console.log("[TempMail] Run tempmailTest.debug() to debug inbox issues");
 })();
