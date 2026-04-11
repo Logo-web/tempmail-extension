@@ -78,6 +78,12 @@ body {
   color: #64748b;
 }
 
+.email-status.dead {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -95,6 +101,16 @@ body {
 
 .status-dot.inactive {
   background: #ef4444;
+}
+
+.status-dot.dead {
+  background: #ef4444;
+  animation: pulse-dead 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dead {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 @keyframes pulse {
@@ -510,6 +526,12 @@ body {
     background: #1e293b;
     border-color: #334155;
     color: #94a3b8;
+  }
+
+  .email-status.dead {
+    background: #450a0a;
+    border-color: #7f1d1d;
+    color: #fca5a5;
   }
 
   .email-display {

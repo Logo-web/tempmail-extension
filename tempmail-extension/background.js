@@ -12,6 +12,10 @@ let currentEmail = null;
 let currentPassword = null;
 let inboxMessages = [];
 let isPolling = false;
+let emailCreatedAt = null;
+let consecutiveFailures = 0;
+let isEmailDead = false;
+const MAX_CONSECUTIVE_FAILURES = 5;
 
 // ============================================================================
 // reCAPTCHA V3 Bypass (ported from freecaptcha Python library)
@@ -117,12 +121,17 @@ async function createGmailOrOutlook(type = "google") {
   currentEmail = data.address;
   currentPassword = generatePassword();
   inboxMessages = [];
+  emailCreatedAt = Date.now();
+  consecutiveFailures = 0;
+  isEmailDead = false;
 
   await chrome.storage.local.set({
     currentEmail: data.address,
     currentPassword: currentPassword,
     emailTimestamp: data.timestamp * 1000,
     emailType: type,
+    emailCreatedAt: Date.now(),
+    isEmailDead: false,
   });
 
   // Notify all tabs
@@ -159,12 +168,16 @@ async function restoreState() {
     "currentEmail",
     "currentPassword",
     "inboxMessages",
+    "emailCreatedAt",
+    "isEmailDead",
   ]);
   if (saved.currentEmail) {
     currentEmail = saved.currentEmail;
     currentPassword = saved.currentPassword || null;
     inboxMessages = saved.inboxMessages || [];
-    console.log("[TempMail] Restored state:", currentEmail);
+    emailCreatedAt = saved.emailCreatedAt || null;
+    isEmailDead = saved.isEmailDead || false;
+    console.log("[TempMail] Restored state:", currentEmail, isEmailDead ? "(DEAD)" : "");
     startInboxPolling();
   }
 }
@@ -275,6 +288,9 @@ async function createEmail(customName = null) {
     currentEmail = data.email;
     currentPassword = generatePassword();
     inboxMessages = [];
+    emailCreatedAt = Date.now();
+    consecutiveFailures = 0;
+    isEmailDead = false;
 
     console.log("[TempMail] New email created:", currentEmail);
 
@@ -282,6 +298,8 @@ async function createEmail(customName = null) {
       currentEmail: data.email,
       currentPassword: currentPassword,
       emailTimestamp: data.timestamp || Date.now(),
+      emailCreatedAt: Date.now(),
+      isEmailDead: false,
     });
 
     // Notify all tabs
@@ -324,10 +342,30 @@ async function checkInbox() {
   if (!currentEmail) return [];
   
   const payload = await getPayload(`${BASE_API_URL}/inbox`, currentEmail);
-  if (!payload) return inboxMessages;
+  if (!payload) {
+    consecutiveFailures++;
+    console.warn(`[TempMail] Inbox check failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
+      isEmailDead = true;
+      await chrome.storage.local.set({ isEmailDead: true });
+      notifyEmailDead();
+    }
+    return inboxMessages;
+  }
   
   const data = await apiRequest("/inbox", { payload });
-  if (!data || !data.messages) return inboxMessages;
+  if (!data || !data.messages) {
+    consecutiveFailures++;
+    console.warn(`[TempMail] Inbox check failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
+      isEmailDead = true;
+      await chrome.storage.local.set({ isEmailDead: true });
+      notifyEmailDead();
+    }
+    return inboxMessages;
+  }
+  
+  consecutiveFailures = 0;
   
   const existingMids = new Set(inboxMessages.map((m) => m.mid));
   let newMessages = [];
@@ -386,6 +424,17 @@ async function readMessage(mid) {
   checkForVerificationLinks([data]);
   
   return data;
+}
+
+// ============================================================================
+// Email Dead Detection
+// ============================================================================
+
+function notifyEmailDead() {
+  console.log("[TempMail] Email marked as dead");
+  chrome.runtime.sendMessage({
+    action: "emailDead",
+  }).catch(() => {});
 }
 
 // ============================================================================
@@ -598,6 +647,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           email: currentEmail,
           password: currentPassword,
           messages: inboxMessages,
+          isDead: isEmailDead,
         });
       });
       return true; // async

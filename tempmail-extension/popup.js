@@ -99,10 +99,19 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Update status
     emailStatus.classList.remove("hidden");
-    emailStatus.innerHTML = `
-      <div class="status-dot active"></div>
-      <span>Active: ${data.email}</span>
-    `;
+    if (data.isDead) {
+      emailStatus.classList.add("dead");
+      emailStatus.innerHTML = `
+        <div class="status-dot dead"></div>
+        <span>Expired: ${data.email}</span>
+      `;
+    } else {
+      emailStatus.classList.remove("dead");
+      emailStatus.innerHTML = `
+        <div class="status-dot active"></div>
+        <span>Active: ${data.email}</span>
+      `;
+    }
   }
 
   function showNoEmailState() {
@@ -298,8 +307,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         email: message.email,
         password: message.password,
         messages: [],
+        isDead: false,
       };
       updateUI(currentEmailData);
+    }
+
+    if (message.action === "emailDead") {
+      if (currentEmailData) {
+        currentEmailData.isDead = true;
+        updateUI(currentEmailData);
+      }
     }
   });
 
