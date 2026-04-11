@@ -228,16 +228,11 @@ async function checkGmailOutlookInbox() {
   if (!currentEmail) return [];
 
   try {
-    const params = new URLSearchParams({
-      email: currentEmail,
-    });
-    if (emailKey) {
-      params.set("key", emailKey);
-    }
-
-    const response = await fetch(`https://smailpro.com/app/inbox?${params.toString()}`, {
+    const response = await fetch(`https://smailpro.com/app/inbox?email=${encodeURIComponent(currentEmail)}`, {
       credentials: "include",
     });
+
+    console.log("[TempMail] Gmail/Outlook inbox response status:", response.status);
 
     if (!response.ok) {
       consecutiveFailures++;
@@ -251,7 +246,7 @@ async function checkGmailOutlookInbox() {
     }
 
     const data = await response.json();
-    console.log("[TempMail] Gmail/Outlook inbox:", data);
+    console.log("[TempMail] Gmail/Outlook inbox data:", data);
 
     consecutiveFailures = 0;
 
