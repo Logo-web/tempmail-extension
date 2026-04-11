@@ -15,6 +15,8 @@ let isPolling = false;
 let emailCreatedAt = null;
 let consecutiveFailures = 0;
 let isEmailDead = false;
+let emailKey = null;
+let emailType = "other";
 const MAX_CONSECUTIVE_FAILURES = 5;
 
 // ============================================================================
@@ -116,7 +118,8 @@ async function createGmailOrOutlook(type = "google") {
   }
 
   const data = await resp.json();
-  console.log("[TempMail] Created:", data.address);
+  console.log("[TempMail] Created:", data);
+  console.log("[TempMail] Full response:", JSON.stringify(data, null, 2));
 
   currentEmail = data.address;
   currentPassword = generatePassword();
@@ -132,6 +135,7 @@ async function createGmailOrOutlook(type = "google") {
     emailType: type,
     emailCreatedAt: Date.now(),
     isEmailDead: false,
+    emailKey: data.key || null,
   });
 
   // Notify all tabs
@@ -170,6 +174,8 @@ async function restoreState() {
     "inboxMessages",
     "emailCreatedAt",
     "isEmailDead",
+    "emailKey",
+    "emailType",
   ]);
   if (saved.currentEmail) {
     currentEmail = saved.currentEmail;
@@ -177,7 +183,9 @@ async function restoreState() {
     inboxMessages = saved.inboxMessages || [];
     emailCreatedAt = saved.emailCreatedAt || null;
     isEmailDead = saved.isEmailDead || false;
-    console.log("[TempMail] Restored state:", currentEmail, isEmailDead ? "(DEAD)" : "");
+    emailKey = saved.emailKey || null;
+    emailType = saved.emailType || "other";
+    console.log("[TempMail] Restored state:", currentEmail, isEmailDead ? "(DEAD)" : "", `(${emailType})`);
     startInboxPolling();
   }
 }
@@ -209,6 +217,78 @@ chrome.runtime.onStartup.addListener(async () => {
 async function ensureState() {
   if (!currentEmail) {
     await restoreState();
+  }
+}
+
+// ============================================================================
+// Gmail/Outlook Inbox API
+// ============================================================================
+
+async function checkGmailOutlookInbox() {
+  if (!currentEmail) return [];
+
+  try {
+    const params = new URLSearchParams({
+      email: currentEmail,
+    });
+    if (emailKey) {
+      params.set("key", emailKey);
+    }
+
+    const response = await fetch(`https://smailpro.com/app/inbox?${params.toString()}`, {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      consecutiveFailures++;
+      console.warn(`[TempMail] Gmail/Outlook inbox check failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
+        isEmailDead = true;
+        await chrome.storage.local.set({ isEmailDead: true });
+        notifyEmailDead();
+      }
+      return inboxMessages;
+    }
+
+    const data = await response.json();
+    console.log("[TempMail] Gmail/Outlook inbox:", data);
+
+    consecutiveFailures = 0;
+
+    if (!data || !data.messages) return inboxMessages;
+
+    const existingMids = new Set(inboxMessages.map((m) => m.mid));
+    let newMessages = [];
+
+    for (const msg of data.messages) {
+      if (!existingMids.has(msg.mid)) {
+        newMessages.push(msg);
+        inboxMessages.unshift(msg);
+      }
+    }
+
+    if (newMessages.length > 0) {
+      chrome.runtime.sendMessage({
+        action: "newMessages",
+        messages: newMessages,
+        count: inboxMessages.length,
+      }).catch(() => {});
+
+      checkForOTP(newMessages);
+      checkForVerificationLinks(newMessages);
+    }
+
+    await chrome.storage.local.set({ inboxMessages });
+    return inboxMessages;
+  } catch (e) {
+    console.error("[TempMail] Gmail/Outlook inbox error:", e);
+    consecutiveFailures++;
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
+      isEmailDead = true;
+      await chrome.storage.local.set({ isEmailDead: true });
+      notifyEmailDead();
+    }
+    return inboxMessages;
   }
 }
 
@@ -340,7 +420,11 @@ async function createEmail(customName = null) {
 
 async function checkInbox() {
   if (!currentEmail) return [];
-  
+
+  if (emailType === "google" || emailType === "microsoft") {
+    return await checkGmailOutlookInbox();
+  }
+
   const payload = await getPayload(`${BASE_API_URL}/inbox`, currentEmail);
   if (!payload) {
     consecutiveFailures++;
@@ -352,7 +436,7 @@ async function checkInbox() {
     }
     return inboxMessages;
   }
-  
+
   const data = await apiRequest("/inbox", { payload });
   if (!data || !data.messages) {
     consecutiveFailures++;
@@ -364,7 +448,7 @@ async function checkInbox() {
     }
     return inboxMessages;
   }
-  
+
   consecutiveFailures = 0;
   
   const existingMids = new Set(inboxMessages.map((m) => m.mid));
@@ -398,17 +482,21 @@ async function checkInbox() {
 
 async function readMessage(mid) {
   if (!currentEmail) return null;
-  
+
+  if (emailType === "google" || emailType === "microsoft") {
+    return await readGmailOutlookMessage(mid);
+  }
+
   // Check cache
   const cached = inboxMessages.find((m) => m.mid === mid);
   if (cached && cached.body) return cached;
-  
+
   const payload = await getPayload(`${BASE_API_URL}/message`, currentEmail, mid);
   if (!payload) return null;
-  
+
   const data = await apiRequest("/message", { payload });
   if (!data) return null;
-  
+
   // Update cache
   const idx = inboxMessages.findIndex((m) => m.mid === mid);
   if (idx >= 0) {
@@ -416,14 +504,58 @@ async function readMessage(mid) {
   } else {
     inboxMessages.unshift(data);
   }
-  
+
   await chrome.storage.local.set({ inboxMessages });
-  
+
   // Check for OTP
   checkForOTP([data]);
   checkForVerificationLinks([data]);
-  
+
   return data;
+}
+
+async function readGmailOutlookMessage(mid) {
+  if (!currentEmail) return null;
+
+  const cached = inboxMessages.find((m) => m.mid === mid);
+  if (cached && cached.body) return cached;
+
+  try {
+    const params = new URLSearchParams({
+      email: currentEmail,
+      mid: mid,
+    });
+    if (emailKey) {
+      params.set("key", emailKey);
+    }
+
+    const response = await fetch(`https://smailpro.com/app/message?${params.toString()}`, {
+      credentials: "include",
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    console.log("[TempMail] Gmail/Outlook message:", data);
+
+    // Update cache
+    const idx = inboxMessages.findIndex((m) => m.mid === mid);
+    if (idx >= 0) {
+      inboxMessages[idx] = { ...inboxMessages[idx], ...data };
+    } else {
+      inboxMessages.unshift(data);
+    }
+
+    await chrome.storage.local.set({ inboxMessages });
+
+    checkForOTP([data]);
+    checkForVerificationLinks([data]);
+
+    return data;
+  } catch (e) {
+    console.error("[TempMail] Gmail/Outlook read message error:", e);
+    return null;
+  }
 }
 
 // ============================================================================
