@@ -128,9 +128,12 @@ async function createGmailOrOutlook(type = "google") {
   consecutiveFailures = 0;
   isEmailDead = false;
   emailKey = data.key || null;
+  emailType = type;
 
   console.log("[TempMail] Extracted key:", emailKey ? emailKey.substring(0, 50) + "..." : "null");
 
+  // Clear all state first, then set new values
+  await chrome.storage.local.clear();
   await chrome.storage.local.set({
     currentEmail: data.address,
     currentPassword: currentPassword,
@@ -140,6 +143,8 @@ async function createGmailOrOutlook(type = "google") {
     isEmailDead: false,
     emailKey: emailKey,
   });
+
+  console.log("[TempMail] Email created and state saved, type:", type);
 
   // Notify all tabs
   try {
@@ -245,6 +250,7 @@ async function checkGmailOutlookInbox() {
   }
 
   try {
+    // Try with JWT payload first (smailpro.com's custom API)
     const inboxUrl = `https://api.sonjj.com/v1/temp_gmail/inbox?payload=${encodeURIComponent(emailKey)}`;
     console.log("[TempMail] Checking Gmail/Outlook inbox:", inboxUrl);
 
@@ -275,7 +281,10 @@ async function checkGmailOutlookInbox() {
     const data = await response.json();
     console.log("[TempMail] Gmail/Outlook inbox data:", JSON.stringify(data, null, 2));
 
+    // Even if no messages, a valid API response means the email is alive
     consecutiveFailures = 0;
+    isEmailDead = false;
+    await chrome.storage.local.set({ isEmailDead: false });
 
     // Handle different response formats
     let messages = data;
@@ -284,7 +293,7 @@ async function checkGmailOutlookInbox() {
     } else if (data && Array.isArray(data)) {
       messages = data;
     } else if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
-      console.log("[TempMail] Gmail/Outlook inbox: empty response");
+      console.log("[TempMail] Gmail/Outlook inbox: empty but valid response, keeping email alive");
       return inboxMessages;
     }
     
