@@ -1043,8 +1043,6 @@
   // ============================================================================
   // Test Helper - exposed as window.tempmailTest
   // ============================================================================
-  // Expose debug interface immediately
-  window.__tempmailDebug = {
   // Test/Debug interface
   window.__tempmailDebug = {
     version: "1.0",
