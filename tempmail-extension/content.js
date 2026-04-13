@@ -824,13 +824,13 @@
       if (newMessages.length > oldMessages.length) {
         const added = newMessages.slice(0, newMessages.length - oldMessages.length);
         for (const msg of added) {
-          const text = msg.body || msg.subject || "";
+          const text = msg.body || msg.body_html || msg.textContent || msg.textBody || msg.subject || msg.textSubject || "";
           const otp = extractOTP(text);
           if (otp) {
             otpDetected = {
               code: otp,
-              from: msg.from || msg.from_email || "",
-              subject: msg.subject || "",
+              from: msg.from || msg.from_email || msg.textFrom || "",
+              subject: msg.subject || msg.textSubject || "",
             };
             if (settings.otpAutoFill) {
               const otpField = findOTPField();
@@ -840,12 +840,12 @@
             }
           }
           // Check for verification links
-          const body = msg.body || msg.body_html || "";
+          const body = msg.body || msg.body_html || msg.textContent || msg.textBody || "";
           const links = extractVerificationLinks(body);
           if (links.length > 0) {
             verificationLinks = links;
-            verificationLinksFrom = msg.from || msg.from_email || "";
-            verificationLinksSubject = msg.subject || "";
+            verificationLinksFrom = msg.from || msg.from_email || msg.textFrom || "";
+            verificationLinksSubject = msg.subject || msg.textSubject || "";
             showVerificationWidget(links, verificationLinksFrom, verificationLinksSubject);
           }
         }
@@ -895,8 +895,144 @@
       case "settings":
         settings = message.settings;
         break;
+
+      case "checkGmailInbox":
+        // This is called from background script to check Gmail inbox
+        // using this page's session cookies
+        checkGmailInboxViaPage(message.email, message.timestamp, message.key)
+          .then((result) => sendResponse(result))
+          .catch((err) => {
+            console.error("[TempMail] checkGmailInbox error:", err);
+            sendResponse({ error: err.message });
+          });
+        return true; // async
+
+      case "fetchGmailPayload":
+        // Fetch fresh payload from smailpro using page's session
+        fetchGmailPayloadFromPage(message.email, message.timestamp, message.key)
+          .then((result) => sendResponse(result))
+          .catch((err) => {
+            console.error("[TempMail] fetchGmailPayload error:", err);
+            sendResponse({ error: err.message });
+          });
+        return true; // async
     }
   });
+
+  // ============================================================================
+  // Gmail Inbox Check via Page Context
+  // ============================================================================
+
+  async function fetchGmailPayloadFromPage(email, timestamp, key) {
+    console.log("[TempMail] Fetching Gmail payload via page context:", email);
+
+    try {
+      const inboxResp = await fetch("https://smailpro.com/app/inbox", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "Referer": "https://smailpro.com/temporary-email",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify([{
+          address: email,
+          timestamp: timestamp || Math.floor(Date.now() / 1000),
+          key: key,
+        }]),
+      });
+
+      if (!inboxResp.ok) {
+        throw new Error("smailpro inbox request failed: " + inboxResp.status);
+      }
+
+      const inboxData = await inboxResp.json();
+      console.log("[TempMail] smailpro payload response via page:", JSON.stringify(inboxData, null, 2));
+
+      if (inboxData && inboxData[0] && inboxData[0].payload) {
+        return { payload: inboxData[0].payload };
+      }
+
+      return { payload: null };
+    } catch (e) {
+      console.error("[TempMail] fetchGmailPayloadFromPage error:", e);
+      return { error: e.message };
+    }
+  }
+
+  async function checkGmailInboxViaPage(email, timestamp, key) {
+    console.log("[TempMail] Checking Gmail inbox via page context:", email);
+
+    try {
+      // First get a fresh payload from smailpro.com/app/inbox using the page's fetch
+      const sessionResp = await fetch("https://smailpro.com/temporary-email", {
+        method: "GET",
+        credentials: "include",
+      });
+
+      const inboxResp = await fetch("https://smailpro.com/app/inbox", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "Referer": "https://smailpro.com/temporary-email",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify([{
+          address: email,
+          timestamp: timestamp || Math.floor(Date.now() / 1000),
+          key: key
+        }]),
+      });
+
+      if (!inboxResp.ok) {
+        throw new Error("smailpro inbox request failed: " + inboxResp.status);
+      }
+
+      const inboxData = await inboxResp.json();
+      console.log("[TempMail] smailpro inbox via page:", JSON.stringify(inboxData, null, 2));
+
+      if (!inboxData || !inboxData[0]) {
+        return { messages: [] };
+      }
+
+      const payload = inboxData[0].payload || inboxData[0].key;
+      if (!payload) {
+        return { messages: [] };
+      }
+
+      // Now call api.sonjj.com with the payload
+      const apiResp = await fetch(`https://api.sonjj.com/v1/temp_gmail/inbox?payload=${encodeURIComponent(payload)}`, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          "Referer": "https://smailpro.com/temporary-email",
+          "Origin": "https://smailpro.com",
+          "Accept": "application/json",
+        },
+      });
+
+      console.log("[TempMail] api.sonjj.com response:", apiResp.status);
+
+      if (!apiResp.ok) {
+        return { messages: [] };
+      }
+
+      const apiData = await apiResp.json();
+      console.log("[TempMail] api.sonjj.com data:", JSON.stringify(apiData, null, 2));
+
+      if (apiData && apiData.messages) {
+        return { messages: apiData.messages };
+      } else if (Array.isArray(apiData)) {
+        return { messages: apiData };
+      }
+
+      return { messages: [] };
+    } catch (e) {
+      console.error("[TempMail] checkGmailInboxViaPage error:", e);
+      return { messages: [], error: e.message };
+    }
+  }
 
   // ============================================================================
   // SmailPro Gmail/Outlook Auto-Creation

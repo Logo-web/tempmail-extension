@@ -78,9 +78,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         const item = document.createElement("div");
         item.className = `inbox-item${index === 0 ? " unread" : ""}`;
         item.innerHTML = `
-          <div class="inbox-item-from">${escapeHtml(msg.from || msg.from_email || "Unknown")}</div>
-          <div class="inbox-item-subject">${escapeHtml(msg.subject || "No subject")}</div>
-          <div class="inbox-item-date">${formatDate(msg.date || msg.timestamp)}</div>
+          <div class="inbox-item-from">${escapeHtml(msg.from || msg.from_email || msg.textFrom || "Unknown")}</div>
+          <div class="inbox-item-subject">${escapeHtml(msg.subject || msg.textSubject || "No subject")}</div>
+          <div class="inbox-item-date">${formatDate(msg.date || msg.timestamp || msg.textDate)}</div>
         `;
         item.addEventListener("click", () => openMessage(msg));
         inboxList.appendChild(item);
@@ -253,9 +253,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Message Handling
   // ============================================================================
   async function openMessage(msg) {
-    modalSubject.textContent = msg.subject || "No subject";
-    modalFrom.textContent = msg.from || msg.from_email || "Unknown";
-    modalDate.textContent = formatDate(msg.date || msg.timestamp);
+    modalSubject.textContent = msg.subject || msg.textSubject || "No subject";
+    modalFrom.textContent = msg.from || msg.from_email || msg.textFrom || "Unknown";
+    modalDate.textContent = formatDate(msg.date || msg.timestamp || msg.textDate);
 
     // Fetch full message if needed
     if (!msg.body) {
@@ -269,7 +269,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     // Display body with all links opening in new tabs
-    const body = msg.body || msg.body_html || "No content";
+    const body = msg.body || msg.body_html || msg.textBody || msg.textContent || "No content";
     // Add target="_blank" to all links
     const bodyWithTarget = body.replace(/<a\s/gi, '<a target="_blank" rel="noopener" ');
     modalBody.innerHTML = bodyWithTarget;
