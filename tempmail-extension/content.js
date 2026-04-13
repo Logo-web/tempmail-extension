@@ -14,7 +14,6 @@
   let verificationLinksFrom = "";
   let verificationLinksSubject = "";
   let settings = {};
-  let hasInjectedDatalist = false;
   let observedForms = new Set();
 
   // ============================================================================
@@ -127,32 +126,9 @@
   // Datalist-based Autocomplete (native browser dropdown)
   // ============================================================================
 
-  function ensureEmailDatalist() {
-    let datalist = document.getElementById(DATALIST_ID);
-    if (!datalist) {
-      datalist = document.createElement("datalist");
-      datalist.id = DATALIST_ID;
-      document.body.appendChild(datalist);
-      hasInjectedDatalist = true;
-    }
-    return datalist;
-  }
-
-  function ensurePasswordDatalist() {
-    let datalist = document.getElementById(DATALIST_ID_PW);
-    if (!datalist) {
-      datalist = document.createElement("datalist");
-      datalist.id = DATALIST_ID_PW;
-      document.body.appendChild(datalist);
-      hasInjectedDatalist = true;
-    }
-    return datalist;
-  }
-
   function updateDatalists() {
     if (!emailData || !emailData.email) return;
 
-    // Update email datalist - update option in place to avoid closing dropdown
     let emailDatalist = document.getElementById(DATALIST_ID);
     if (!emailDatalist) {
       emailDatalist = document.createElement("datalist");
@@ -162,7 +138,6 @@
       emailOption.value = emailData.email;
       emailDatalist.appendChild(emailOption);
     } else {
-      // Update existing option value instead of clearing (prevents dropdown close)
       const existingOption = emailDatalist.querySelector("option");
       if (existingOption) {
         existingOption.value = emailData.email;
@@ -173,7 +148,6 @@
       }
     }
 
-    // Update password datalist
     let pwDatalist = document.getElementById(DATALIST_ID_PW);
     if (!pwDatalist) {
       pwDatalist = document.createElement("datalist");
@@ -197,7 +171,6 @@
       }
     }
 
-    // Always attach to all fields
     attachEmailDatalist(true);
     attachPasswordDatalist(true);
   }
@@ -249,7 +222,6 @@
         email: saved.currentEmail,
         password: saved.currentPassword || "",
       };
-      // Only update if different
       if (!emailData || emailData.email !== newEmail.email) {
         emailData = newEmail;
         updateDatalists();
@@ -426,6 +398,24 @@
         lower.includes("email-verify")
       );
     });
+  }
+
+  function extractOTP(text) {
+    if (!text) return null;
+    const plainText = text.replace(/<[^>]+>/g, " ");
+    const patterns = [
+      /(?:verification code|confirm|OTP|code|PIN|security code)[^0-9]*?(\d{4,8})/i,
+      /(?:code|PIN)[^0-9]*?(\d{6})/i,
+      /(\d{6})\s*(?:is your|is your code|is the)/i,
+      /(?:your|the)\s+(?:verification|confirmation|security|OTP)\s+(?:code|number|PIN)\s+(?:is\s+)?(\d{4,8})/i,
+      /(\d{4,8})\s+(?:is your|is the)\s+(?:verification|confirmation|security|OTP)/i,
+      /(?:^|\s)(\d{4,8})(?:\s|$)/,
+    ];
+    for (const pattern of patterns) {
+      const match = plainText.match(pattern);
+      if (match) return match[1];
+    }
+    return null;
   }
 
   // ============================================================================
@@ -655,13 +645,11 @@
   let datalistsAttached = false;
 
   function scanForForms() {
-    // 1. Attach datalists to fields (only once per page load)
     if (emailData && !datalistsAttached) {
       updateDatalists();
       datalistsAttached = true;
     }
 
-    // 2. Check for registration forms (classic)
     const forms = document.querySelectorAll("form");
     forms.forEach((form) => {
       if (observedForms.has(form)) return;
@@ -677,7 +665,6 @@
       }
     });
 
-    // 3. Check for OTP fields
     if (otpDetected && settings.otpAutoFill) {
       const otpField = findOTPField();
       if (otpField && !otpField.value) {
@@ -685,7 +672,6 @@
       }
     }
 
-    // 4. Check for verification links
     if (verificationLinks && verificationLinks.length > 0) {
       showVerificationWidget(
         verificationLinks,
@@ -698,7 +684,6 @@
   function showRegistrationPrompt(emailField, passwordField) {
     const existing = document.getElementById("tempmail-widget");
     if (existing) {
-      // Update existing widget with new email
       const emailText = existing.querySelector(".tempmail-email-text");
       const pwText = existing.querySelector(".tempmail-password-text");
       const fillBtn = existing.querySelector(".tempmail-btn-fill");
@@ -766,19 +751,15 @@
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
 
-    console.log("[TempMail] Storage changed:", Object.keys(changes));
-
     if (changes.currentEmail || changes.currentPassword) {
       const newEmail = changes.currentEmail?.newValue || emailData?.email || "";
       const newPw = changes.currentPassword?.newValue || emailData?.password || "";
-      console.log("[TempMail] Email updated:", newEmail);
 
       emailData = {
         email: newEmail,
         password: newPw,
       };
 
-      // Update existing prompt widget if visible
       const existingWidget = document.getElementById("tempmail-widget");
       if (existingWidget) {
         const emailText = existingWidget.querySelector(".tempmail-email-text");
@@ -789,7 +770,6 @@
         if (pwText) pwText.textContent = newPw;
         if (copyEmailBtn) copyEmailBtn.setAttribute("data-copy", newEmail);
         if (copyPwBtns && copyPwBtns[1]) copyPwBtns[1].setAttribute("data-copy", newPw);
-        // Update fill button onclick
         const fillBtn = existingWidget.querySelector(".tempmail-btn-fill");
         if (fillBtn) {
           fillBtn.replaceWith(fillBtn.cloneNode(true));
@@ -812,7 +792,6 @@
       }
 
       if (emailData.email) {
-        console.log("[TempMail] Updating datalists and scanning forms");
         updateDatalists();
         scanForForms();
       }
@@ -839,7 +818,6 @@
               }
             }
           }
-          // Check for verification links
           const body = msg.body || msg.body_html || msg.textContent || msg.textBody || "";
           const links = extractVerificationLinks(body);
           if (links.length > 0) {
@@ -896,36 +874,21 @@
         settings = message.settings;
         break;
 
-      case "checkGmailInbox":
-        // This is called from background script to check Gmail inbox
-        // using this page's session cookies
-        checkGmailInboxViaPage(message.email, message.timestamp, message.key)
-          .then((result) => sendResponse(result))
-          .catch((err) => {
-            console.error("[TempMail] checkGmailInbox error:", err);
-            sendResponse({ error: err.message });
-          });
-        return true; // async
-
       case "fetchGmailPayload":
-        // Fetch fresh payload from smailpro using page's session
         fetchGmailPayloadFromPage(message.email, message.timestamp, message.key)
           .then((result) => sendResponse(result))
           .catch((err) => {
-            console.error("[TempMail] fetchGmailPayload error:", err);
             sendResponse({ error: err.message });
           });
-        return true; // async
+        return true;
     }
   });
 
   // ============================================================================
-  // Gmail Inbox Check via Page Context
+  // Gmail Payload Fetch via Page Context (called from background)
   // ============================================================================
 
   async function fetchGmailPayloadFromPage(email, timestamp, key) {
-    console.log("[TempMail] Fetching Gmail payload via page context:", email);
-
     try {
       const inboxResp = await fetch("https://smailpro.com/app/inbox", {
         method: "POST",
@@ -943,194 +906,17 @@
       });
 
       if (!inboxResp.ok) {
-        throw new Error("smailpro inbox request failed: " + inboxResp.status);
+        return { error: "smailpro inbox request failed: " + inboxResp.status };
       }
 
       const inboxData = await inboxResp.json();
-      console.log("[TempMail] smailpro payload response via page:", JSON.stringify(inboxData, null, 2));
-
       if (inboxData && inboxData[0] && inboxData[0].payload) {
         return { payload: inboxData[0].payload };
       }
-
       return { payload: null };
     } catch (e) {
-      console.error("[TempMail] fetchGmailPayloadFromPage error:", e);
       return { error: e.message };
     }
-  }
-
-  async function checkGmailInboxViaPage(email, timestamp, key) {
-    console.log("[TempMail] Checking Gmail inbox via page context:", email);
-
-    try {
-      // First get a fresh payload from smailpro.com/app/inbox using the page's fetch
-      const sessionResp = await fetch("https://smailpro.com/temporary-email", {
-        method: "GET",
-        credentials: "include",
-      });
-
-      const inboxResp = await fetch("https://smailpro.com/app/inbox", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "Referer": "https://smailpro.com/temporary-email",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        body: JSON.stringify([{
-          address: email,
-          timestamp: timestamp || Math.floor(Date.now() / 1000),
-          key: key
-        }]),
-      });
-
-      if (!inboxResp.ok) {
-        throw new Error("smailpro inbox request failed: " + inboxResp.status);
-      }
-
-      const inboxData = await inboxResp.json();
-      console.log("[TempMail] smailpro inbox via page:", JSON.stringify(inboxData, null, 2));
-
-      if (!inboxData || !inboxData[0]) {
-        return { messages: [] };
-      }
-
-      const payload = inboxData[0].payload || inboxData[0].key;
-      if (!payload) {
-        return { messages: [] };
-      }
-
-      // Now call api.sonjj.com with the payload
-      const apiResp = await fetch(`https://api.sonjj.com/v1/temp_gmail/inbox?payload=${encodeURIComponent(payload)}`, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Referer": "https://smailpro.com/temporary-email",
-          "Origin": "https://smailpro.com",
-          "Accept": "application/json",
-        },
-      });
-
-      console.log("[TempMail] api.sonjj.com response:", apiResp.status);
-
-      if (!apiResp.ok) {
-        return { messages: [] };
-      }
-
-      const apiData = await apiResp.json();
-      console.log("[TempMail] api.sonjj.com data:", JSON.stringify(apiData, null, 2));
-
-      if (apiData && apiData.messages) {
-        return { messages: apiData.messages };
-      } else if (Array.isArray(apiData)) {
-        return { messages: apiData };
-      }
-
-      return { messages: [] };
-    } catch (e) {
-      console.error("[TempMail] checkGmailInboxViaPage error:", e);
-      return { messages: [], error: e.message };
-    }
-  }
-
-  // ============================================================================
-  // SmailPro Gmail/Outlook Auto-Creation
-  // ============================================================================
-
-  function setupSmailProAutoCreate() {
-    if (!window.location.hostname.includes("smailpro.com")) return;
-    if (!window.location.pathname.includes("temporary-email")) return;
-
-    console.log("[TempMail] SmailPro page detected, setting up auto-create");
-
-    // Check URL params for email type
-    const urlParams = new URLSearchParams(window.location.search);
-    const emailType = urlParams.get("emailType"); // gmail or outlook
-
-    if (!emailType) return;
-
-    console.log("[TempMail] Auto-creating", emailType, "email");
-
-    // Wait for Alpine.js to initialize, then click generate
-    const waitForAlpine = setInterval(() => {
-      // Look for the create function (Alpine component)
-      const createComponent = window.Alpine?.$data?.(document.querySelector("[x-data]"));
-
-      // Try to find and click the generate button
-      const generateBtn = document.querySelector('[x-on\\:click*="generate"], button:has-text("Generate")');
-      const createBtn = document.querySelector('button:has-text("Create"), [x-on\\:click*="create"]');
-
-      // Try clicking various buttons
-      const allButtons = document.querySelectorAll("button");
-      for (const btn of allButtons) {
-        const text = btn.textContent.trim().toLowerCase();
-        if (text === "generate" || text === "create" || text.includes("generate")) {
-          console.log("[TempMail] Found generate button:", text);
-          btn.click();
-          clearInterval(waitForAlpine);
-          break;
-        }
-      }
-
-      // If no button found, try calling the Alpine function directly
-      if (!generateBtn && !createBtn) {
-        // Look for the generate function in Alpine store
-        const alpineEls = document.querySelectorAll("[x-data]");
-        for (const el of alpineEls) {
-          const data = el.__x?.__data;
-          if (data && typeof data.generate === "function") {
-            console.log("[TempMail] Calling generate function");
-            data.generate(true);
-            clearInterval(waitForAlpine);
-            break;
-          }
-        }
-      }
-    }, 500);
-
-    // Timeout after 15 seconds
-    setTimeout(() => clearInterval(waitForAlpine), 15000);
-
-    // Watch for the created email
-    const checkForEmail = setInterval(() => {
-      // Look for the email display
-      const emailDisplay = document.querySelector(".email-display, [x-text*='email'], .created-email");
-      if (emailDisplay) {
-        const emailText = emailDisplay.textContent.trim();
-        const emailMatch = emailText.match(/[\w.+-]+@(gmail\.com|googlemail\.com|outlook\.com|hotmail\.com|outlook\.\w+)/i);
-        if (emailMatch) {
-          const email = emailMatch[0];
-          console.log("[TempMail] Email created:", email);
-          clearInterval(checkForEmail);
-
-          const action = emailType === "gmail" ? "gmailCreated" : "outlookCreated";
-          chrome.runtime.sendMessage({
-            action: action,
-            email: email,
-          });
-        }
-      }
-
-      // Also check for the email in the input field or display
-      const emailInputs = document.querySelectorAll('input[type="text"], input[type="email"]');
-      for (const input of emailInputs) {
-        if (input.value && (input.value.includes("@gmail.com") || input.value.includes("@outlook.com"))) {
-          console.log("[TempMail] Email found in input:", input.value);
-          clearInterval(checkForEmail);
-
-          const action = emailType === "gmail" ? "gmailCreated" : "outlookCreated";
-          chrome.runtime.sendMessage({
-            action: action,
-            email: input.value,
-          });
-          break;
-        }
-      }
-    }, 1000);
-
-    // Timeout after 30 seconds
-    setTimeout(() => clearInterval(checkForEmail), 30000);
   }
 
   // ============================================================================
@@ -1157,9 +943,6 @@
       updateDatalists();
     }
 
-    // Setup smailpro auto-create if on that page
-    setupSmailProAutoCreate();
-
     scanForForms();
 
     observer.observe(document.body, {
@@ -1175,75 +958,4 @@
   } else {
     init();
   }
-
-  // ============================================================================
-  // Test Helper - exposed as window.tempmailTest
-  // ============================================================================
-  // Test/Debug interface
-  window.__tempmailDebug = {
-    version: "1.0",
-    initialized: true,
-    emailData: emailData,
-  };
-  console.log("[TempMail] Content script loaded, __tempmailDebug available");
-  
-  window.tempmailTest = {
-    async getEmail() {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "getEmail" }, resolve);
-      });
-    },
-    async createEmail() {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "createEmail" }, resolve);
-      });
-    },
-    async createGmail() {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "createGmail" }, resolve);
-      });
-    },
-    async createOutlook() {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "createOutlook" }, resolve);
-      });
-    },
-    async checkInbox() {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "checkInbox" }, resolve);
-      });
-    },
-    async getOTP() {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "getOTP" }, resolve);
-      });
-    },
-    async deleteEmail() {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "deleteEmail" }, resolve);
-      });
-    },
-    logState() {
-      console.log("[TempMail Test] Current email:", emailData);
-      console.log("[TempMail Test] OTP detected:", otpDetected);
-      console.log("[TempMail Test] Verification links:", verificationLinks);
-    },
-    // Direct debug - logs to PAGE console
-    async debug() {
-      const state = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "getEmail" }, resolve);
-      });
-      console.log("[TempMail Debug] Full state:", JSON.stringify(state, null, 2));
-      
-      // Also try to check inbox directly
-      console.log("[TempMail Debug] Calling checkInbox...");
-      const messages = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: "checkInbox" }, resolve);
-      });
-      console.log("[TempMail Debug] Inbox messages:", messages);
-      return { state, messages };
-    }
-  };
-  console.log("[TempMail] Test helper available as window.tempmailTest");
-  console.log("[TempMail] Run tempmailTest.debug() to debug inbox issues");
 })();

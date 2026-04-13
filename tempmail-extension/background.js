@@ -26,13 +26,11 @@ const MAX_CONSECUTIVE_FAILURES = 100;
 // ============================================================================
 
 async function solveRecaptchaV3() {
-  // Step 1: Get anchor page
   const anchorUrl = `https://www.google.com/recaptcha/api2/anchor?ar=1&k=${RECAPTCHA_SITE_KEY}&co=aHR0cHM6Ly9zbWFpbHByby5jb206NDQz&hl=en&v=abc123&size=invisible&cb=smailpro`;
 
   const anchorResp = await fetch(anchorUrl);
   const anchorHtml = await anchorResp.text();
 
-  // Extract recaptcha-token
   const tokenMatch = anchorHtml.match(/id="recaptcha-token"\s*value="(.*?)"/);
   if (!tokenMatch) {
     throw new Error("Failed to extract recaptcha-token from anchor");
@@ -40,7 +38,6 @@ async function solveRecaptchaV3() {
 
   const recapToken = tokenMatch[1];
 
-  // Step 2: Send reload request
   const reloadUrl = `https://www.google.com/recaptcha/api2/reload?k=${RECAPTCHA_SITE_KEY}`;
 
   const params = new URLSearchParams();
@@ -58,18 +55,14 @@ async function solveRecaptchaV3() {
 
   const reloadResp = await fetch(reloadUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
   });
 
   const reloadText = await reloadResp.text();
-
-  // Parse response - it's JSON prefixed with ")]}'\n"
   const jsonStr = reloadText.substring(5);
   const data = JSON.parse(jsonStr);
-  return data[1]; // Token is at index 1
+  return data[1];
 }
 
 // ============================================================================
@@ -77,19 +70,14 @@ async function solveRecaptchaV3() {
 // ============================================================================
 
 async function createGmailOrOutlook(type = "google") {
-  console.log(`[TempMail] Creating ${type} email...`);
-
-  // Solve reCAPTCHA
   let captchaToken;
   try {
     captchaToken = await solveRecaptchaV3();
-    console.log("[TempMail] Captcha solved, token length:", captchaToken.length);
   } catch (e) {
     console.error("[TempMail] Captcha solve failed:", e);
     return null;
   }
 
-  // Build request
   const domain = type === "google" ? "gmail.com" : "outlook.com";
   const params = new URLSearchParams({
     username: "random",
@@ -113,8 +101,6 @@ async function createGmailOrOutlook(type = "google") {
   }
 
   const data = await resp.json();
-  console.log("[TempMail] Created:", data);
-  console.log("[TempMail] Full response:", JSON.stringify(data, null, 2));
 
   currentEmail = data.address;
   currentPassword = generatePassword();
@@ -124,9 +110,6 @@ async function createGmailOrOutlook(type = "google") {
   isEmailDead = false;
   emailKey = data.key || null;
   emailType = type;
-
-  console.log("[TempMail] Extracted key:", emailKey ? emailKey.substring(0, 50) + "..." : "null");
-  console.log("[TempMail] Extracted timestamp:", data.timestamp);
 
   // Clear all state first, then set new values
   await chrome.storage.local.clear();
@@ -142,18 +125,14 @@ async function createGmailOrOutlook(type = "google") {
     gmailPayload: gmailPayload,
   });
 
-  console.log("[TempMail] Email created and state saved, type:", type);
-
-  // For Gmail/Outlook, immediately fetch the fresh payload from smailpro
+  // For Gmail/Outlook, immediately fetch the fresh payload
   if (type === "google" || type === "microsoft") {
     setTimeout(async () => {
       try {
         await fetchGmailPayloadFromSmailpro();
-        // After payload is fetched, do initial inbox check
-        const messages = await checkInbox();
-        console.log("[TempMail] Initial inbox check after payload fetch:", messages.length, "messages");
+        await checkInbox();
       } catch (e) {
-        console.log("[TempMail] Could not fetch Gmail payload:", e.message);
+        console.warn("[TempMail] Initial Gmail inbox check failed:", e.message);
       }
     }, 500);
   }
@@ -209,15 +188,11 @@ async function restoreState() {
     gmailPayload = saved.gmailPayload || null;
     emailType = saved.emailType || "other";
     emailTimestampRaw = saved.emailTimestampRaw || null;
-    console.log("[TempMail] Restored state:", currentEmail, isEmailDead ? "(DEAD)" : "", `(${emailType})`);
     startInboxPolling();
   }
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log("[TempMail] Extension installed");
-
-  // Set default settings
   await chrome.storage.local.set({
     autoFillEnabled: true,
     autoGeneratePassword: true,
@@ -227,17 +202,13 @@ chrome.runtime.onInstalled.addListener(async () => {
     showNotification: true,
     otpAutoFill: true,
   });
-
   await restoreState();
 });
 
-// Restore state on every service worker wakeup
 chrome.runtime.onStartup.addListener(async () => {
-  console.log("[TempMail] Service worker started");
   await restoreState();
 });
 
-// Also restore on message if state is empty
 async function ensureState() {
   if (!currentEmail) {
     await restoreState();
@@ -250,8 +221,6 @@ async function ensureState() {
 
 async function fetchGmailPayloadFromSmailpro() {
   if (!currentEmail || !emailKey || emailType === "other") return;
-
-  console.log("[TempMail] Fetching fresh Gmail payload from smailpro via hidden tab");
 
   try {
     const tab = await chrome.tabs.create({
@@ -272,72 +241,30 @@ async function fetchGmailPayloadFromSmailpro() {
       if (results && results.payload) {
         gmailPayload = results.payload;
         await chrome.storage.local.set({ gmailPayload });
-        console.log("[TempMail] Stored fresh Gmail payload from tab");
-      } else {
-        console.log("[TempMail] No payload returned from tab");
       }
     } catch (e) {
-      console.log("[TempMail] Could not message tab:", e.message);
-      // Fallback: try direct fetch without credentials
-      await fetchGmailPayloadDirect();
+      console.warn("[TempMail] Could not message tab for payload:", e.message);
     }
 
     try { await chrome.tabs.remove(tab.id); } catch (e) {}
   } catch (e) {
-    console.log("[TempMail] fetchGmailPayloadFromSmailpro tab error:", e.message);
-    await fetchGmailPayloadDirect();
-  }
-}
-
-async function fetchGmailPayloadDirect() {
-  try {
-    const inboxResp = await fetch("https://smailpro.com/app/inbox", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "Referer": "https://smailpro.com/temporary-email",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body: JSON.stringify([{
-        address: currentEmail,
-        timestamp: emailTimestampRaw || Math.floor(Date.now() / 1000),
-        key: emailKey,
-      }]),
-    });
-
-    if (!inboxResp.ok) throw new Error("Inbox fetch failed: " + inboxResp.status);
-
-    const inboxData = await inboxResp.json();
-    if (inboxData && inboxData[0] && inboxData[0].payload) {
-      gmailPayload = inboxData[0].payload;
-      await chrome.storage.local.set({ gmailPayload });
-      console.log("[TempMail] Stored fresh Gmail payload (direct)");
-    }
-  } catch (e) {
-    console.log("[TempMail] fetchGmailPayloadDirect error:", e.message);
+    console.warn("[TempMail] fetchGmailPayloadFromSmailpro error:", e.message);
   }
 }
 
 async function checkGmailOutlookInbox() {
   if (!currentEmail) return [];
 
-  console.log("[TempMail] checkGmailOutlookInbox called, email:", currentEmail, "key:", emailKey ? "present" : "null", "payload:", gmailPayload ? "present" : "null");
-
   if (!emailKey) {
-    console.log("[TempMail] Gmail/Outlook inbox: no key available");
     return inboxMessages;
   }
 
   try {
-    // Fast path: use stored payload directly
     if (gmailPayload) {
-      console.log("[TempMail] Using stored Gmail payload directly");
       await checkGmailInboxWithPayload(gmailPayload);
       return inboxMessages;
     }
 
-    // No payload yet - fetch one and check inbox
     return await refreshGmailPayloadAndCheck();
   } catch (e) {
     console.error("[TempMail] Gmail/Outlook inbox error:", e);
@@ -352,23 +279,16 @@ async function checkGmailOutlookInbox() {
 }
 
 async function checkGmailInboxWithPayload(payload) {
-  if (!payload) {
-    console.log("[TempMail] checkGmailInboxWithPayload: no payload");
-    return [];
-  }
+  if (!payload) return [];
 
   const inboxUrl = `https://api.sonjj.com/v1/temp_gmail/inbox?payload=${encodeURIComponent(payload)}`;
-  console.log("[TempMail] Checking Gmail/Outlook inbox with payload");
 
   try {
     const response = await fetch(inboxUrl, {
-      headers: {
-        "Accept": "application/json",
-      },
+      headers: { "Accept": "application/json" },
     });
 
     if (!response.ok) {
-      console.log("[TempMail] Gmail inbox check failed:", response.status);
       consecutiveFailures++;
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
         isEmailDead = true;
@@ -379,10 +299,8 @@ async function checkGmailInboxWithPayload(payload) {
     }
 
     const data = await response.json();
-    console.log("[TempMail] Gmail inbox data:", JSON.stringify(data).substring(0, 500));
 
     if (!data || !data.messages) {
-      console.log("[TempMail] No messages in Gmail/Outlook inbox (data:", data ? Object.keys(data) : "null", ")");
       return [];
     }
 
@@ -400,7 +318,6 @@ async function checkGmailInboxWithPayload(payload) {
     }
 
     if (newMessages.length > 0) {
-      console.log("[TempMail] New Gmail/Outlook messages:", newMessages.length);
       chrome.runtime.sendMessage({
         action: "newMessages",
         messages: newMessages,
@@ -426,7 +343,6 @@ async function checkGmailInboxWithPayload(payload) {
 }
 
 async function refreshGmailPayloadAndCheck() {
-  // Try direct POST to smailpro with session cookies
   try {
     const inboxResp = await fetch("https://smailpro.com/app/inbox", {
       method: "POST",
@@ -445,14 +361,12 @@ async function refreshGmailPayloadAndCheck() {
 
     if (inboxResp.ok) {
       const inboxData = await inboxResp.json();
-      console.log("[TempMail] smailpro inbox response:", inboxData);
 
       if (inboxData && inboxData[0]) {
         const freshPayload = inboxData[0].payload;
         if (freshPayload) {
           gmailPayload = freshPayload;
           await chrome.storage.local.set({ gmailPayload });
-          console.log("[TempMail] Refreshed Gmail payload");
 
           await checkGmailInboxWithPayload(freshPayload);
           return inboxMessages;
@@ -460,14 +374,15 @@ async function refreshGmailPayloadAndCheck() {
       }
     }
   } catch (e) {
-    console.log("[TempMail] Direct payload fetch failed:", e.message);
+    console.warn("[TempMail] Direct payload fetch failed:", e.message);
   }
 
   return inboxMessages;
 }
 
 // ============================================================================
-// SmailPro API
+// SmailPro API (Temp Mail)
+// ============================================================================
 
 async function getPayload(url, email = null, mid = null) {
   const params = new URLSearchParams({ url });
@@ -475,15 +390,12 @@ async function getPayload(url, email = null, mid = null) {
   if (mid) params.set("mid", mid);
 
   const targetUrl = `${PAYLOAD_URL}?${params.toString()}`;
-  console.log("[TempMail] Fetching payload:", targetUrl.substring(0, 100));
 
   try {
     const response = await fetch(targetUrl);
-    console.log("[TempMail] Payload response status:", response.status);
-    
+
     if (response.status === 429) {
-      const data = await response.json().catch(() => ({}));
-      console.warn("[TempMail] Rate limited:", data.msg || "Too many requests");
+      console.warn("[TempMail] Rate limited");
       return null;
     }
     if (!response.ok) {
@@ -493,7 +405,6 @@ async function getPayload(url, email = null, mid = null) {
     return await response.text();
   } catch (e) {
     console.error("[TempMail] Payload fetch error:", e.message);
-    console.error("[TempMail] Target URL:", targetUrl);
     return null;
   }
 }
@@ -502,12 +413,9 @@ async function apiRequest(endpoint, params = {}) {
   const url = new URL(`${BASE_API_URL}${endpoint}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
-  console.log("[TempMail] API request:", url.toString().substring(0, 150));
-
   try {
     const response = await fetch(url.toString());
-    console.log("[TempMail] API response status:", response.status);
-    
+
     if (!response.ok) {
       console.warn(`[TempMail] API failed: ${response.status}`);
       return null;
@@ -515,28 +423,20 @@ async function apiRequest(endpoint, params = {}) {
     return await response.json();
   } catch (e) {
     console.error("[TempMail] API fetch error:", e.message);
-    console.error("[TempMail] Target URL:", url.toString());
     return null;
   }
 }
 
 async function createEmail(customName = null) {
-  console.log("[TempMail] Creating new email...");
   try {
     const payload = await getPayload(`${BASE_API_URL}/create`, customName);
-    if (!payload) {
-      console.error("[TempMail] Failed to get payload");
-      return null;
-    }
+    if (!payload) return null;
 
     const params = { payload };
     if (customName) params.email = customName;
 
     const data = await apiRequest("/create", params);
-    if (!data || !data.email) {
-      console.error("[TempMail] API returned no email");
-      return null;
-    }
+    if (!data || !data.email) return null;
 
     currentEmail = data.email;
     currentPassword = generatePassword();
@@ -544,8 +444,6 @@ async function createEmail(customName = null) {
     emailCreatedAt = Date.now();
     consecutiveFailures = 0;
     isEmailDead = false;
-
-    console.log("[TempMail] New email created:", currentEmail);
 
     await chrome.storage.local.set({
       currentEmail: data.email,
@@ -558,7 +456,6 @@ async function createEmail(customName = null) {
     // Notify all tabs
     try {
       const tabs = await chrome.tabs.query({});
-      console.log("[TempMail] Notifying", tabs.length, "tabs");
       for (const tab of tabs) {
         try {
           await chrome.tabs.sendMessage(tab.id, {
@@ -566,22 +463,16 @@ async function createEmail(customName = null) {
             email: currentEmail,
             password: currentPassword,
           });
-        } catch (e) {
-          // Tab may not have content script loaded
-        }
+        } catch (e) {}
       }
-    } catch (e) {
-      console.error("[TempMail] Error notifying tabs:", e);
-    }
+    } catch (e) {}
 
-    // Also broadcast via runtime (for popup etc)
     chrome.runtime.sendMessage({
       action: "emailCreated",
       email: currentEmail,
       password: currentPassword,
     }).catch(() => {});
 
-    // Start polling
     startInboxPolling();
 
     return { email: currentEmail, password: currentPassword };
@@ -601,7 +492,6 @@ async function checkInbox() {
   const payload = await getPayload(`${BASE_API_URL}/inbox`, currentEmail);
   if (!payload) {
     consecutiveFailures++;
-    console.warn(`[TempMail] Inbox check failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
       isEmailDead = true;
       await chrome.storage.local.set({ isEmailDead: true });
@@ -613,7 +503,6 @@ async function checkInbox() {
   const data = await apiRequest("/inbox", { payload });
   if (!data || !data.messages) {
     consecutiveFailures++;
-    console.warn(`[TempMail] Inbox check failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES})`);
     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
       isEmailDead = true;
       await chrome.storage.local.set({ isEmailDead: true });
@@ -623,32 +512,28 @@ async function checkInbox() {
   }
 
   consecutiveFailures = 0;
-  
+
   const existingMids = new Set(inboxMessages.map((m) => m.mid));
   let newMessages = [];
-  
+
   for (const msg of data.messages) {
     if (!existingMids.has(msg.mid)) {
       newMessages.push(msg);
       inboxMessages.unshift(msg);
     }
   }
-  
-  // Notify about new messages
+
   if (newMessages.length > 0) {
     chrome.runtime.sendMessage({
       action: "newMessages",
       messages: newMessages,
       count: inboxMessages.length,
     }).catch(() => {});
-    
-    // Check for OTP codes in new messages
-    if (newMessages.length > 0) {
-      checkForOTP(newMessages);
-      checkForVerificationLinks(newMessages);
-    }
+
+    checkForOTP(newMessages);
+    checkForVerificationLinks(newMessages);
   }
-  
+
   await chrome.storage.local.set({ inboxMessages });
   return inboxMessages;
 }
@@ -660,7 +545,6 @@ async function readMessage(mid) {
     return await readGmailOutlookMessage(mid);
   }
 
-  // Check cache
   const cached = inboxMessages.find((m) => m.mid === mid);
   if (cached && cached.body) return cached;
 
@@ -670,7 +554,6 @@ async function readMessage(mid) {
   const data = await apiRequest("/message", { payload });
   if (!data) return null;
 
-  // Update cache
   const idx = inboxMessages.findIndex((m) => m.mid === mid);
   if (idx >= 0) {
     inboxMessages[idx] = { ...inboxMessages[idx], ...data };
@@ -680,7 +563,6 @@ async function readMessage(mid) {
 
   await chrome.storage.local.set({ inboxMessages });
 
-  // Check for OTP
   checkForOTP([data]);
   checkForVerificationLinks([data]);
 
@@ -709,12 +591,11 @@ async function refreshGmailPayload() {
       if (inboxData && inboxData[0] && inboxData[0].payload) {
         gmailPayload = inboxData[0].payload;
         await chrome.storage.local.set({ gmailPayload });
-        console.log("[TempMail] Refreshed Gmail payload for message read");
         return gmailPayload;
       }
     }
   } catch (e) {
-    console.log("[TempMail] refreshGmailPayload error:", e.message);
+    console.warn("[TempMail] refreshGmailPayload error:", e.message);
   }
   return null;
 }
@@ -743,9 +624,7 @@ async function readGmailOutlookMessage(mid) {
     if (messageData) return messageData;
   }
 
-  // Fall back to smailpro.com/app/message
-  console.log("[TempMail] Trying smailpro.com/app/message for Gmail/Outlook");
-  return await readGmailOutlookMessageViaSmailpro(mid);
+  return null;
 }
 
 async function readGmailOutlookMessageViaJWT(mid) {
@@ -755,16 +634,12 @@ async function readGmailOutlookMessageViaJWT(mid) {
 
   try {
     const messageUrl = `https://api.sonjj.com/v1/temp_gmail/message?payload=${encodeURIComponent(payload)}&mid=${encodeURIComponent(mid)}`;
-    console.log("[TempMail] Reading Gmail/Outlook message:", messageUrl);
 
     let response = await fetch(messageUrl, {
-      headers: {
-        "Accept": "application/json",
-      },
+      headers: { "Accept": "application/json" },
     });
 
     if (response.status === 401 && gmailPayload) {
-      console.log("[TempMail] Payload expired, refreshing...");
       const freshPayload = await refreshGmailPayload();
       if (freshPayload) {
         payload = freshPayload;
@@ -775,22 +650,14 @@ async function readGmailOutlookMessageViaJWT(mid) {
       }
     }
 
-    if (!response.ok) {
-      console.log("[TempMail] JWT message read failed:", response.status);
-      return null;
-    }
+    if (!response.ok) return null;
 
     const data = await response.json();
-    console.log("[TempMail] Gmail/Outlook message via JWT:", data);
 
-    if (!data || Object.keys(data).length === 0) {
-      console.log("[TempMail] JWT returned empty message");
-      return null;
-    }
+    if (!data || Object.keys(data).length === 0) return null;
 
     const normalizedData = await normalizeGmailMessage(data);
 
-    // Update cache
     const idx = inboxMessages.findIndex((m) => m.mid === mid);
     if (idx >= 0) {
       inboxMessages[idx] = { ...inboxMessages[idx], ...normalizedData };
@@ -805,70 +672,7 @@ async function readGmailOutlookMessageViaJWT(mid) {
 
     return normalizedData;
   } catch (e) {
-    console.error("[TempMail] Gmail/Outlook read message via JWT error:", e);
-    return null;
-  }
-}
-
-async function readGmailOutlookMessageViaSmailpro(mid) {
-  if (!currentEmail) return null;
-
-  try {
-    // First establish session
-    await fetch("https://smailpro.com/temporary-email", {
-      method: "GET",
-    });
-
-    const messageUrl = `https://smailpro.com/app/message?email=${encodeURIComponent(currentEmail)}&mid=${encodeURIComponent(mid)}`;
-    console.log("[TempMail] Reading Gmail/Outlook message via smailpro:", messageUrl);
-
-    const response = await fetch(messageUrl, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://smailpro.com/temporary-email",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-    });
-
-    console.log("[TempMail] smailpro message response:", response.status);
-
-    if (!response.ok) {
-      console.log("[TempMail] smailpro message read failed");
-      return null;
-    }
-
-    const text = await response.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      console.log("[TempMail] smailpro message response is not JSON");
-      return null;
-    }
-
-    console.log("[TempMail] Gmail/Outlook message via smailpro:", data);
-
-    if (!data || Object.keys(data).length === 0) {
-      return null;
-    }
-
-    // Update cache
-    const idx = inboxMessages.findIndex((m) => m.mid === mid);
-    if (idx >= 0) {
-      inboxMessages[idx] = { ...inboxMessages[idx], ...data };
-    } else {
-      inboxMessages.unshift(data);
-    }
-
-    await chrome.storage.local.set({ inboxMessages });
-
-    checkForOTP([data]);
-    checkForVerificationLinks([data]);
-
-    return data;
-  } catch (e) {
-    console.error("[TempMail] Gmail/Outlook read message via smailpro error:", e);
+    console.error("[TempMail] readGmailOutlookMessageViaJWT error:", e);
     return null;
   }
 }
@@ -878,7 +682,6 @@ async function readGmailOutlookMessageViaSmailpro(mid) {
 // ============================================================================
 
 function notifyEmailDead() {
-  console.log("[TempMail] Email marked as dead");
   chrome.runtime.sendMessage({
     action: "emailDead",
   }).catch(() => {});
@@ -890,11 +693,9 @@ function notifyEmailDead() {
 
 function extractOTP(text) {
   if (!text) return null;
-  
-  // Remove HTML tags
+
   const plainText = text.replace(/<[^>]+>/g, " ");
-  
-  // Common OTP patterns
+
   const patterns = [
     /(?:verification code|confirm|OTP|code|PIN|security code)[^0-9]*?(\d{4,8})/i,
     /(?:code|PIN)[^0-9]*?(\d{6})/i,
@@ -903,27 +704,24 @@ function extractOTP(text) {
     /(\d{4,8})\s+(?:is your|is the)\s+(?:verification|confirmation|security|OTP)/i,
     /(?:^|\s)(\d{4,8})(?:\s|$)/,
   ];
-  
+
   for (const pattern of patterns) {
     const match = plainText.match(pattern);
     if (match) return match[1];
   }
-  
+
   return null;
 }
 
 async function checkForOTP(messages) {
   const settings = await chrome.storage.local.get(["otpAutoFill", "showNotification"]);
   if (!settings.otpAutoFill) return;
-  
+
   for (const msg of messages) {
     const text = msg.body || msg.body_html || msg.textContent || msg.textBody || msg.subject || msg.textSubject || "";
     const otp = extractOTP(text);
-    
+
     if (otp) {
-      console.log("[TempMail] OTP detected:", otp);
-      
-      // Show notification
       if (settings.showNotification) {
         chrome.notifications.create({
           type: "basic",
@@ -933,8 +731,7 @@ async function checkForOTP(messages) {
           priority: 2,
         });
       }
-      
-      // Send to content script
+
       chrome.runtime.sendMessage({
         action: "otpDetected",
         code: otp,
@@ -951,20 +748,17 @@ async function checkForOTP(messages) {
 
 function extractVerificationLinks(text) {
   if (!text) return [];
-  
-  // Extract URLs from HTML href attributes
+
   const hrefUrls = text.match(/href=["'](https?:\/\/[^"']+)["']/gi) || [];
   const extracted = hrefUrls.map((match) => {
     const urlMatch = match.match(/href=["'](https?:\/\/[^"']+)["']/i);
     return urlMatch ? urlMatch[1] : null;
   }).filter(Boolean);
-  
-  // Also extract plain URLs
+
   const plainUrls = text.match(/https?:\/\/[^\s"'<>]+/g) || [];
-  
+
   const allUrls = [...new Set([...extracted, ...plainUrls])];
-  
-  // Filter for verification/auth-related URLs
+
   return allUrls.filter((url) => {
     const lower = url.toLowerCase();
     return (
@@ -990,11 +784,8 @@ async function checkForVerificationLinks(messages) {
   for (const msg of messages) {
     const body = msg.body || msg.body_html || msg.textContent || msg.textBody || "";
     const links = extractVerificationLinks(body);
-    
+
     if (links.length > 0) {
-      console.log("[TempMail] Verification links detected:", links);
-      
-      // Show notification
       const settings = await chrome.storage.local.get(["showNotification"]);
       if (settings.showNotification) {
         chrome.notifications.create({
@@ -1005,8 +796,7 @@ async function checkForVerificationLinks(messages) {
           priority: 2,
         });
       }
-      
-      // Send to content script
+
       chrome.runtime.sendMessage({
         action: "verificationLinkDetected",
         links: links,
@@ -1027,18 +817,17 @@ function generatePassword(length = 16) {
   const digits = "0123456789";
   const symbols = "!@#$%^&*()_+-=[]{}|;:,.<>?";
   const all = upper + lower + digits + symbols;
-  
+
   let password = "";
   password += upper[Math.floor(Math.random() * upper.length)];
   password += lower[Math.floor(Math.random() * lower.length)];
   password += digits[Math.floor(Math.random() * digits.length)];
   password += symbols[Math.floor(Math.random() * symbols.length)];
-  
+
   for (let i = 4; i < length; i++) {
     password += all[Math.floor(Math.random() * all.length)];
   }
-  
-  // Shuffle
+
   return password
     .split("")
     .sort(() => Math.random() - 0.5)
@@ -1052,11 +841,9 @@ function generatePassword(length = 16) {
 function startInboxPolling() {
   if (isPolling) return;
   if (!currentEmail) return;
-  
+
   isPolling = true;
-  
-  // Use chrome.alarms for reliable background polling in MV3
-  chrome.alarms.create("inboxPoll", { periodInMinutes: 0.083 }); // ~5 seconds
+  chrome.alarms.create("inboxPoll", { periodInMinutes: 0.083 });
 }
 
 function stopInboxPolling() {
@@ -1078,7 +865,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         sendResponse(result);
       });
-      return true; // async
+      return true;
 
     case "createGmail":
       createGmailOrOutlook("google").then((result) => {
@@ -1088,7 +875,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         sendResponse(result);
       });
-      return true; // async
+      return true;
 
     case "createOutlook":
       createGmailOrOutlook("microsoft").then((result) => {
@@ -1098,8 +885,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         sendResponse(result);
       });
-      return true; // async
-    
+      return true;
+
     case "getEmail":
       ensureState().then(() => {
         sendResponse({
@@ -1109,30 +896,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           isDead: isEmailDead,
         });
       });
-      return true; // async
-    
+      return true;
+
     case "checkInbox":
       ensureState().then(() => {
         checkInbox().then((messages) => {
           sendResponse(messages);
         });
       });
-      return true; // async
-    
+      return true;
+
     case "readMessage":
       ensureState().then(() => {
         readMessage(message.mid).then((msg) => {
           sendResponse(msg);
         });
       });
-      return true; // async
-    
+      return true;
+
     case "copyToClipboard":
       navigator.clipboard.writeText(message.text).then(() => {
         sendResponse({ success: true });
       });
-      return true; // async
-    
+      return true;
+
     case "deleteEmail":
       currentEmail = null;
       currentPassword = null;
@@ -1145,12 +932,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ]);
       sendResponse({ success: true });
       break;
-    
+
     case "generatePassword":
-      const length = message.length || 16;
-      sendResponse({ password: generatePassword(length) });
+      sendResponse({ password: generatePassword(message.length || 16) });
       break;
-    
+
     case "getOTP":
       ensureState().then(() => {
         let latestOTP = null;
@@ -1164,12 +950,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         sendResponse(latestOTP);
       });
-      return true; // async
+      return true;
   }
 });
 
 // ============================================================================
-// Alarm for inbox polling (more reliable than setInterval in service workers)
+// Alarm for inbox polling
 // ============================================================================
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -1179,9 +965,4 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       await checkInbox();
     }
   }
-});
-
-// Keep service worker alive during async operations
-chrome.runtime.onSuspend.addListener(() => {
-  console.log("[TempMail] Service worker suspending");
 });
