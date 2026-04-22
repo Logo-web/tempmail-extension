@@ -19,7 +19,11 @@ let emailKey = null;
 let gmailPayload = null;
 let emailType = "other";
 let emailTimestampRaw = null;
-const MAX_CONSECUTIVE_FAILURES = 100;
+const MAX_CONSECUTIVE_FAILURES = 12;
+// HTTP statuses that mean the email/session is definitively unusable. Hitting
+// any of these from an inbox endpoint marks the email dead on the first
+// occurrence instead of waiting for the transient-failure counter.
+const DEAD_STATUSES = new Set([401, 403, 404, 410]);
 
 // ============================================================================
 // reCAPTCHA V3 Bypass (ported from freecaptcha Python library)
@@ -88,9 +92,11 @@ async function createGmailOrOutlook(type = "google") {
 
   const resp = await fetch(`${SMAILPRO_CREATE_URL}?${params.toString()}`, {
     method: "GET",
+    credentials: "include",
     headers: {
       "Accept": "application/json",
       "x-captcha": captchaToken,
+      "Referer": "https://smailpro.com/temporary-email",
     },
   });
 
@@ -125,11 +131,11 @@ async function createGmailOrOutlook(type = "google") {
     gmailPayload: gmailPayload,
   });
 
-  // For Gmail/Outlook, immediately fetch the fresh payload
+  // For Gmail/Outlook, kick off the first inbox check. refreshGmailPayloadAndCheck()
+  // will seed cookies via a hidden tab if the service worker has no session yet.
   if (type === "google" || type === "microsoft") {
     setTimeout(async () => {
       try {
-        await fetchGmailPayloadFromSmailpro();
         await checkInbox();
       } catch (e) {
         console.warn("[TempMail] Initial Gmail inbox check failed:", e.message);
@@ -219,36 +225,21 @@ async function ensureState() {
 // Gmail/Outlook Inbox API
 // ============================================================================
 
-async function fetchGmailPayloadFromSmailpro() {
-  if (!currentEmail || !emailKey || emailType === "other") return;
-
+// Opens a hidden tab to smailpro.com just long enough for the browser to
+// store the session cookies returned by Set-Cookie. Used when the service
+// worker's fetch has no valid session yet (first run, expired cookies).
+// The old implementation also tried to read the payload through a content
+// script listener that never existed — that message path has been dropped.
+async function seedSmailproCookies() {
   try {
     const tab = await chrome.tabs.create({
       url: "https://smailpro.com/temporary-email",
       active: false,
     });
-
-    await new Promise((r) => setTimeout(r, 3000));
-
-    try {
-      const results = await chrome.tabs.sendMessage(tab.id, {
-        action: "fetchGmailPayload",
-        email: currentEmail,
-        timestamp: emailTimestampRaw || Math.floor(Date.now() / 1000),
-        key: emailKey,
-      });
-
-      if (results && results.payload) {
-        gmailPayload = results.payload;
-        await chrome.storage.local.set({ gmailPayload });
-      }
-    } catch (e) {
-      console.warn("[TempMail] Could not message tab for payload:", e.message);
-    }
-
+    await new Promise((r) => setTimeout(r, 2500));
     try { await chrome.tabs.remove(tab.id); } catch (e) {}
   } catch (e) {
-    console.warn("[TempMail] fetchGmailPayloadFromSmailpro error:", e.message);
+    console.warn("[TempMail] seedSmailproCookies error:", e.message);
   }
 }
 
@@ -259,21 +250,15 @@ async function checkGmailOutlookInbox() {
     return inboxMessages;
   }
 
+  // The sonjj.com payload is a snapshot token tied to the timestamp it was
+  // issued with — reusing the cached one never surfaces newly arrived messages.
+  // Always refresh the payload via smailpro.com/app/inbox before each poll,
+  // mirroring what the Temp Mail flow (getPayload + /inbox) does implicitly.
   try {
-    if (gmailPayload) {
-      await checkGmailInboxWithPayload(gmailPayload);
-      return inboxMessages;
-    }
-
     return await refreshGmailPayloadAndCheck();
   } catch (e) {
     console.error("[TempMail] Gmail/Outlook inbox error:", e);
-    consecutiveFailures++;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
-      isEmailDead = true;
-      await chrome.storage.local.set({ isEmailDead: true });
-      notifyEmailDead();
-    }
+    await recordTransientFailure("network error");
     return inboxMessages;
   }
 }
@@ -289,12 +274,11 @@ async function checkGmailInboxWithPayload(payload) {
     });
 
     if (!response.ok) {
-      consecutiveFailures++;
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
-        isEmailDead = true;
-        await chrome.storage.local.set({ isEmailDead: true });
-        notifyEmailDead();
+      if (DEAD_STATUSES.has(response.status)) {
+        await markEmailDead(`inbox ${response.status}`);
+        return [];
       }
+      await recordTransientFailure(`inbox ${response.status}`);
       return [];
     }
 
@@ -332,19 +316,15 @@ async function checkGmailInboxWithPayload(payload) {
     return inboxMessages;
   } catch (e) {
     console.error("[TempMail] checkGmailInboxWithPayload error:", e);
-    consecutiveFailures++;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
-      isEmailDead = true;
-      await chrome.storage.local.set({ isEmailDead: true });
-      notifyEmailDead();
-    }
+    await recordTransientFailure("network error");
     return [];
   }
 }
 
 async function refreshGmailPayloadAndCheck() {
+  let inboxResp;
   try {
-    const inboxResp = await fetch("https://smailpro.com/app/inbox", {
+    inboxResp = await fetch("https://smailpro.com/app/inbox", {
       method: "POST",
       credentials: "include",
       headers: {
@@ -358,25 +338,67 @@ async function refreshGmailPayloadAndCheck() {
         key: emailKey,
       }]),
     });
-
-    if (inboxResp.ok) {
-      const inboxData = await inboxResp.json();
-
-      if (inboxData && inboxData[0]) {
-        const freshPayload = inboxData[0].payload;
-        if (freshPayload) {
-          gmailPayload = freshPayload;
-          await chrome.storage.local.set({ gmailPayload });
-
-          await checkGmailInboxWithPayload(freshPayload);
-          return inboxMessages;
-        }
-      }
-    }
   } catch (e) {
-    console.warn("[TempMail] Direct payload fetch failed:", e.message);
+    console.warn("[TempMail] smailpro.com/app/inbox network error:", e.message);
+    await recordTransientFailure("network error");
+    return inboxMessages;
   }
 
+  if (!inboxResp.ok) {
+    console.warn(`[TempMail] smailpro.com/app/inbox ${inboxResp.status} — session cookies may be missing; re-seeding via hidden tab`);
+    // Cookies may be missing/expired. Seed them with a hidden tab and retry once.
+    await seedSmailproCookies();
+    try {
+      inboxResp = await fetch("https://smailpro.com/app/inbox", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "Referer": "https://smailpro.com/temporary-email",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify([{
+          address: currentEmail,
+          timestamp: emailTimestampRaw || Math.floor(Date.now() / 1000),
+          key: emailKey,
+        }]),
+      });
+    } catch (e) {
+      console.warn("[TempMail] retry after seed failed:", e.message);
+    }
+  }
+
+  if (!inboxResp || !inboxResp.ok) {
+    // Dead signals on smailpro.com mean the key itself is no longer valid —
+    // cookies were already re-seeded above, so this isn't a session problem.
+    if (inboxResp && DEAD_STATUSES.has(inboxResp.status)) {
+      await markEmailDead(`smailpro ${inboxResp.status}`);
+      return inboxMessages;
+    }
+    await recordTransientFailure(`smailpro ${inboxResp ? inboxResp.status : "net"}`);
+    return inboxMessages;
+  }
+
+  let inboxData;
+  try {
+    inboxData = await inboxResp.json();
+  } catch (e) {
+    console.warn("[TempMail] smailpro.com/app/inbox returned non-JSON");
+    await recordTransientFailure("non-JSON response");
+    return inboxMessages;
+  }
+
+  const freshPayload = inboxData && inboxData[0] && inboxData[0].payload;
+  if (!freshPayload) {
+    console.warn("[TempMail] smailpro.com/app/inbox returned no payload", inboxData);
+    await recordTransientFailure("no payload in response");
+    return inboxMessages;
+  }
+
+  gmailPayload = freshPayload;
+  await chrome.storage.local.set({ gmailPayload });
+
+  await checkGmailInboxWithPayload(freshPayload);
   return inboxMessages;
 }
 
@@ -444,13 +466,19 @@ async function createEmail(customName = null) {
     emailCreatedAt = Date.now();
     consecutiveFailures = 0;
     isEmailDead = false;
+    emailType = "other";
+    emailKey = null;
+    emailTimestampRaw = data.timestamp || null;
 
     await chrome.storage.local.set({
       currentEmail: data.email,
       currentPassword: currentPassword,
       emailTimestamp: data.timestamp || Date.now(),
+      emailTimestampRaw: data.timestamp || null,
       emailCreatedAt: Date.now(),
       isEmailDead: false,
+      emailType: "other",
+      emailKey: null,
     });
 
     // Notify all tabs
@@ -491,23 +519,41 @@ async function checkInbox() {
 
   const payload = await getPayload(`${BASE_API_URL}/inbox`, currentEmail);
   if (!payload) {
-    consecutiveFailures++;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
-      isEmailDead = true;
-      await chrome.storage.local.set({ isEmailDead: true });
-      notifyEmailDead();
-    }
+    await recordTransientFailure("payload unavailable");
     return inboxMessages;
   }
 
-  const data = await apiRequest("/inbox", { payload });
-  if (!data || !data.messages) {
-    consecutiveFailures++;
-    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
-      isEmailDead = true;
-      await chrome.storage.local.set({ isEmailDead: true });
-      notifyEmailDead();
+  // Inline fetch so we can see the status code — a 404/410 from the inbox
+  // endpoint means the temp mailbox has been recycled/expired on the server.
+  let inboxResp;
+  try {
+    const url = `${BASE_API_URL}/inbox?payload=${encodeURIComponent(payload)}`;
+    inboxResp = await fetch(url);
+  } catch (e) {
+    console.error("[TempMail] inbox fetch error:", e.message);
+    await recordTransientFailure("network error");
+    return inboxMessages;
+  }
+
+  if (!inboxResp.ok) {
+    if (DEAD_STATUSES.has(inboxResp.status)) {
+      await markEmailDead(`inbox ${inboxResp.status}`);
+      return inboxMessages;
     }
+    await recordTransientFailure(`inbox ${inboxResp.status}`);
+    return inboxMessages;
+  }
+
+  let data;
+  try {
+    data = await inboxResp.json();
+  } catch (e) {
+    await recordTransientFailure("non-JSON response");
+    return inboxMessages;
+  }
+
+  if (!data || !data.messages) {
+    await recordTransientFailure("no messages field");
     return inboxMessages;
   }
 
@@ -570,22 +616,27 @@ async function readMessage(mid) {
 }
 
 async function refreshGmailPayload() {
-  try {
-    const inboxResp = await fetch("https://smailpro.com/app/inbox", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "Referer": "https://smailpro.com/temporary-email",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      body: JSON.stringify([{
-        address: currentEmail,
-        timestamp: emailTimestampRaw || Math.floor(Date.now() / 1000),
-        key: emailKey,
-      }]),
-    });
+  const doFetch = () => fetch("https://smailpro.com/app/inbox", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "Referer": "https://smailpro.com/temporary-email",
+      "X-Requested-With": "XMLHttpRequest",
+    },
+    body: JSON.stringify([{
+      address: currentEmail,
+      timestamp: emailTimestampRaw || Math.floor(Date.now() / 1000),
+      key: emailKey,
+    }]),
+  });
 
+  try {
+    let inboxResp = await doFetch();
+    if (!inboxResp.ok) {
+      await seedSmailproCookies();
+      inboxResp = await doFetch();
+    }
     if (inboxResp.ok) {
       const inboxData = await inboxResp.json();
       if (inboxData && inboxData[0] && inboxData[0].payload) {
@@ -681,10 +732,40 @@ async function readGmailOutlookMessageViaJWT(mid) {
 // Email Dead Detection
 // ============================================================================
 
-function notifyEmailDead() {
+function notifyEmailDead(reason) {
   chrome.runtime.sendMessage({
     action: "emailDead",
+    reason: reason || null,
   }).catch(() => {});
+}
+
+async function markEmailDead(reason) {
+  if (isEmailDead) return;
+  isEmailDead = true;
+  consecutiveFailures = 0;
+  await chrome.storage.local.set({ isEmailDead: true });
+  stopInboxPolling();
+  notifyEmailDead(reason);
+
+  try {
+    const { showNotification } = await chrome.storage.local.get(["showNotification"]);
+    if (showNotification !== false) {
+      chrome.notifications.create(`tempmail-dead-${Date.now()}`, {
+        type: "basic",
+        iconUrl: "icons/icon128.png",
+        title: "Temp Email expired",
+        message: `${currentEmail || "Your email"} can no longer receive messages${reason ? ` (${reason})` : ""}. Create a new one.`,
+        priority: 2,
+      });
+    }
+  } catch (e) {}
+}
+
+async function recordTransientFailure(reason) {
+  consecutiveFailures++;
+  if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !isEmailDead) {
+    await markEmailDead(reason || "repeated failures");
+  }
 }
 
 // ============================================================================

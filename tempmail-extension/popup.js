@@ -101,9 +101,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     emailStatus.classList.remove("hidden");
     if (data.isDead) {
       emailStatus.classList.add("dead");
+      const reasonText = data.deadReason ? ` (${escapeHtml(data.deadReason)})` : "";
       emailStatus.innerHTML = `
         <div class="status-dot dead"></div>
-        <span>Expired: ${data.email}</span>
+        <span>Expired: ${escapeHtml(data.email)}${reasonText}</span>
       `;
     } else {
       emailStatus.classList.remove("dead");
@@ -315,6 +316,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (message.action === "emailDead") {
       if (currentEmailData) {
         currentEmailData.isDead = true;
+        currentEmailData.deadReason = message.reason || null;
         updateUI(currentEmailData);
       }
     }
